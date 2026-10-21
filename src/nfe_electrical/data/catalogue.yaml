@@ -1,0 +1,165 @@
+# NFE symbol catalogue (draft v0.1, built from NFE's pilot drawings).
+#
+# Read side:  `blocks` says what each block name in NFE's existing drawings is.
+#             Symbol type always comes from the block name (and sometimes an
+#             attribute), never from the layer: layer use in the pilot files is loose.
+# Write side: `device_types` are the things the toolkit can place, and
+#             `nfe_layers` are the only layers it ever writes to.
+#
+# Engineers own this file. Descriptions come from the pilot drawings' legends, matched by each
+# symbol's drawn centre; `note` marks where the legend and the block name disagree.
+# Entries marked "inferred" are guesses from the block name and need confirming.
+
+version: 1
+
+# Layers NFE's existing drawings use for electrical work. Used to find
+# electrical symbols with unknown block names and to read sheet disciplines.
+existing_electrical_layers:
+  lighting: [Wiring, lighting fittings, switches, lighting & switches, Wiring for Lightts, Lightning]
+  power: [sockets wall, sockets, sockets spur, switchgear, Cooker control uniy, shaver socket, air conditioning]
+  fire: [smoke detectors, fire alarm sounder, fire alarm panel, break glass unit]
+  ict: [PA, TV, voice, data, cctv, E-CCTV-device]
+
+# Layers the toolkit writes to. Colours are AutoCAD colour indices.
+nfe_layers:
+  NFE-E-POWER:        {color: 5, description: "Small power outlets: sockets, DP switches, cooker control units, shaver points"}
+  NFE-E-POWER-CCT:    {color: 4, description: "Small power circuit runs"}
+  NFE-E-LIGHT:        {color: 1, description: "Luminaires"}
+  NFE-E-LIGHT-SWITCH: {color: 1, description: "Lighting switches and sensors"}
+  NFE-E-LIGHT-CCT:    {color: 1, description: "Lighting circuit runs"}
+  NFE-E-BOARD:        {color: 6, description: "Distribution boards and consumer units"}
+  NFE-E-FIRE:         {color: 3, description: "Fire detection and alarm devices"}
+  NFE-E-ICT:          {color: 4, description: "Data, TV, AV, CCTV and intercom points"}
+  NFE-E-ANNO:         {color: 7, description: "Circuit tags and notes"}
+  NFE-E-REVIEW:       {color: 6, plot: false, description: "Review markers (not plotted)"}
+
+# Existing block names. Bound-xref prefixes (an older job's drawing name followed by
+# "$0$") are stripped before lookup, so "<old job>$0$sh" matches "sh". The same applies
+# to `source_block` below.
+blocks:
+  # --- lighting
+  spot:                 {type: downlight_spot_3w,   category: lighting, description: "Recessed ceiling 3W LED spot light IP40"}
+  A TYPE:               {type: downlight_12w,       category: lighting, description: "Recessed/surface 12W LED down light IP40"}
+  Light type B:         {type: downlight_10w,       category: lighting, description: "Recessed/surface 10W LED down light IP40"}
+  opal_bollard:         {type: downlight_15w,       category: lighting, description: "Recessed/surface 15W LED down light IP40"}
+  STAIR LIGHTS:         {type: stair_light_pir,     category: lighting, description: "LED stair case lighting system c/w PIR sensor"}
+  MIRROR LIGHT1:        {type: pendant_mirror,      category: lighting, description: "Decorative pendant mirror light c/w LED bulbs IP44"}
+  5arm:                 {type: pendant_3arm,        category: lighting, description: "Decorative 3 arm pendant light IP40 c/w LED bulbs", note: "F6 legend row; the block name says 5 arm"}
+  TYPE P1:              {type: pendant_drop_5w,     category: lighting, description: "Decorative drop-down pendant lights c/w 5W LED bulbs"}
+  p2:                   {type: pendant_drop_3w,     category: lighting, description: "3W LED decorative drop-down pendant light"}
+  W2:                   {type: bulkhead_10w,        category: lighting, description: "10W LED decorative bulkhead wall light IP44", note: "from the F6 legend row"}
+  glaciapirouette:      {type: pendant_bedside_5w,  category: lighting, description: "Decorative bedside pendant light c/w 5W LED bulb", note: "F6 legend row; the block name and PIROUETTE tag suggest a bulkhead - engineers to confirm"}
+  LIGH:                 {type: wall_light_outdoor_10w, category: lighting, description: "Decorative outdoor wall light 10W LED IP65", note: "from the F6 legend row"}
+  STEPS:                {type: wall_light_9w,       category: lighting, description: "9W decorative indoor wall light IP20", note: "F6 legend row; the block name suggests a step light"}
+  T3:                   {type: luminaire_other,     category: lighting, description: "Luminaire (type not identified)"}
+  DRTGRT:               {type: corridor_wall_light, category: lighting, description: "Decorative corridor wall light c/w LED bulbs IP41", note: "from the F6 legend row; keyboard-mash block name"}
+  lht:                  {type: chandelier,          category: lighting, description: "5/3 arm decorative chandelier c/w LED bulbs", note: "from the F6 legend row (tag CH)"}
+  Emergency light-E:    {type: presence_detector,   category: switch,   description: "5-30 minute long range microwave presence detector", note: "F6 legend row; the block name says emergency light - engineers to confirm"}
+  diffusalax_1x36_1200: {type: batten_1x36,         category: lighting, description: "1x36W 1200 mm fitting"}
+  # --- switches and sensors
+  onegangoneway:        {type: switch_1g1w, category: switch, description: "1 gang 1 way switch"}
+  blk1_6:               {type: switch_1g1w, category: switch, description: "1 gang 1 way switch"}
+  onegangtwoway:        {type: switch_1g2w, category: switch, description: "1 gang 2 way switch"}
+  2G1W:                 {type: switch_2g1w, category: switch, description: "2 gang 1 way switch"}
+  2G2W:                 {type: switch_2g2w, category: switch, description: "2 gang 2 way switch"}
+  2gang2way switch:     {type: switch_2g2w, category: switch, description: "2 gang 2 way switch"}
+  2G:                   {type: switch_1g2w, category: switch, description: "1 gang 2 way switch", note: "F6 legend row; the block name says 2 gang"}
+  intermediateswitch:   {type: switch_intermediate, category: switch, description: "Intermediate switch"}
+  3g2w sky:             {type: switch_3g2w, category: switch, description: "3 gang 2 way switch"}
+  4g1w:                 {type: switch_4g1w, category: switch, description: "4 gang 1 way switch"}
+  pms:                  {type: presence_detector, category: switch, description: "Presence/motion sensor (inferred from the name; not in the F6 legend)"}
+  XDFGXFH:              {type: photocell, category: switch, description: "Photocell", note: "from the F6 legend row; keyboard-mash block name"}
+  # --- small power
+  SOCKET:
+    type: socket_twin_13a
+    category: power
+    description: "13A two gang switched socket outlet"
+    variants:
+      - {attrib: S, value: USB, type: socket_twin_usb, description: "13A two gang switched socket outlet c/w USB ports"}
+      - {attrib: S, value: WP,  type: socket_twin_weatherproof, description: "13A two gang weatherproof socket outlet"}
+  SOCK SINGLE:          {type: socket_single_13a, category: power, description: "13A one gang switched socket outlet"}
+  HIGHLEVEL:            {type: socket_twin_high_level, category: power, description: "High level 13A twin socket (1200 mm above finished floor)"}
+  DOUBLE POLE SWITCH:   {type: dp_switch_20a, category: power, description: "20A double pole switch"}
+  ccu:                  {type: cooker_control_unit, category: power, description: "Cooker control unit"}
+  sh:                   {type: shaver_socket, category: power, description: "Shaver socket"}
+  extracfan:            {type: kitchen_hood, category: power, description: "Kitchen hood unit (tag EF)"}
+  FCU cassette unit:    {type: fcu_cassette, category: power, description: "FCU cassette unit"}
+  # --- boards
+  100A_6_Way_SPN_CU:    {type: consumer_unit, category: board, description: "Consumer unit (100A 6 way SPN)"}
+  isolat:               {type: isolator, category: board, description: "Isolator point"}
+  EM:                   {type: energy_meter, category: board, description: "EM (energy meter, inferred)"}
+  MDB 1:                {type: main_db, category: board, description: "Main distribution board"}
+  STAB:                 {type: stabiliser, category: board, description: "Stabiliser (inferred)"}
+  # --- fire
+  smokedetector:        {type: smoke_detector, category: fire, description: "Smoke detector"}
+  HD:                   {type: heat_detector, category: fire, description: "Heat detector"}
+  alarmsounder:         {type: fire_sounder, category: fire, description: "Fire alarm sounder"}
+  bg:                   {type: break_glass, category: fire, description: "Break glass unit"}
+  zone panel:           {type: fire_panel, category: fire, description: "Fire alarm panel"}
+  # --- ICT, AV, security
+  TELEPHONE POINT:      {type: data_point, category: ict, description: "Data/telephone socket"}
+  telpcsckt:            {type: tv_point, category: ict, description: "Television point"}
+  HDMI-2:               {type: hdmi_point, category: ict, description: "HDMI point"}
+  projector:            {type: projector, category: ict, description: "Projector"}
+  monitor:              {type: intercom, category: ict, description: "Intercom interface point (inferred; layer voice)"}
+  BASE SPEAKER:         {type: ceiling_speaker, category: ict, description: "Ceiling mounted speaker"}
+  GFHYT:                {type: tv_point, category: ict, description: "Television point", note: "from the F6 legend row; keyboard-mash block name"}
+  bullet camera point:  {type: camera_bullet, category: ict, description: "IP bullet camera"}
+  dome camera point:    {type: camera_dome, category: ict, description: "IP dome camera"}
+  doorbell:             {type: door_bell, category: ict, description: "Door bell sounder"}
+  doorbellswitch:       {type: door_bell_switch, category: ict, description: "Door bell switch"}
+
+# Device types the toolkit can place. `source_block` is the existing NFE symbol
+# copied into the overlay; `attribs` fills its attributes. `height_mm` is only
+# set where a pilot legend states it; everything else is for the NFE playbook.
+device_types:
+  socket_twin_13a:
+    {category: power, mount: wall, source_block: SOCKET, attribs: {S: S}, layer: NFE-E-POWER,
+     description: "13A two gang switched socket outlet", height_mm: null}
+  socket_twin_usb:
+    {category: power, mount: wall, source_block: SOCKET, attribs: {S: USB}, layer: NFE-E-POWER,
+     description: "13A two gang switched socket outlet c/w USB ports", height_mm: null}
+  socket_twin_weatherproof:
+    {category: power, mount: wall, source_block: SOCKET, attribs: {S: WP}, layer: NFE-E-POWER,
+     description: "13A two gang weatherproof socket outlet", height_mm: null}
+  socket_single_13a:
+    {category: power, mount: wall, source_block: SOCK SINGLE, attribs: {S: S}, layer: NFE-E-POWER,
+     description: "13A one gang switched socket outlet", height_mm: null}
+  socket_twin_high_level:
+    {category: power, mount: wall, source_block: HIGHLEVEL, attribs: {HL: HL, W: W}, layer: NFE-E-POWER,
+     description: "High level 13A twin socket", height_mm: 1200}
+  dp_switch_20a:
+    {category: power, mount: wall, source_block: DOUBLE POLE SWITCH, attribs: {H: H, DP: DP}, layer: NFE-E-POWER,
+     description: "20A double pole switch", height_mm: null}
+  cooker_control_unit:
+    {category: power, mount: wall, source_block: ccu, attribs: {}, layer: NFE-E-POWER,
+     description: "Cooker control unit", height_mm: null}
+  shaver_socket:
+    {category: power, mount: wall, source_block: sh, attribs: {SH: SH}, layer: NFE-E-POWER,
+     description: "Shaver socket", height_mm: null}
+  tv_point:
+    {category: ict, mount: wall, source_block: telpcsckt, attribs: {T: TV}, layer: NFE-E-ICT,
+     description: "Television point", height_mm: null}
+  data_point:
+    {category: ict, mount: wall, source_block: TELEPHONE POINT, attribs: {T: T}, layer: NFE-E-ICT,
+     description: "Data/telephone socket", height_mm: null}
+  consumer_unit:
+    {category: board, mount: wall, source_block: 100A_6_Way_SPN_CU, attribs: {CU: CU}, layer: NFE-E-BOARD,
+     description: "Consumer unit", height_mm: null}
+  downlight_12w:
+    {category: lighting, mount: ceiling, source_block: A TYPE, attribs: {L: L}, layer: NFE-E-LIGHT,
+     description: "Recessed/surface 12W LED down light IP40", height_mm: null}
+  downlight_spot_3w:
+    {category: lighting, mount: ceiling, source_block: spot, attribs: {L: L}, layer: NFE-E-LIGHT,
+     description: "Recessed ceiling 3W LED spot light IP40", height_mm: null}
+  switch_1g1w:
+    {category: switch, mount: wall, source_block: onegangoneway, attribs: {}, layer: NFE-E-LIGHT-SWITCH,
+     description: "1 gang 1 way switch", height_mm: null}
+  smoke_detector:
+    {category: fire, mount: ceiling, source_block: smokedetector, attribs: {SD: SD}, layer: NFE-E-FIRE,
+     description: "Smoke detector", height_mm: null}
+
+# Extra attributes the toolkit adds (invisible) to every symbol it copies into
+# an overlay, as a first step towards the attributed symbol library the
+# research recommends. They are filled in when a device is placed or circuited.
+nfe_attributes: [NFE_TYPE, NFE_ROOM, NFE_CIRCUIT, NFE_DB, NFE_MOUNT_MM, NFE_RULE]

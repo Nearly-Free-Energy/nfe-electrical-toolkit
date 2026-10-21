@@ -1,0 +1,69 @@
+# BS 7671 rule set: small power for the pilot floor's repeated apartment type (draft v0.1).
+#
+# DRAFT FOR ENGINEER REVIEW - not an approved NFE standard. It is the first slice of the
+# NFE rules playbook for jobs governed by BS 7671 (NFE's default standard). BS 7671 itself
+# sets no socket counts or positions: these are NFE design rules applied under it. Rule sets
+# for other standards (IEC 60364, US EAS 811-1:2014) go in their own folders next to this
+# one; a job may only use rule sets written for its governing standard.
+#
+# Where the counts come from: they were read off the engineer's existing F6 small-power
+# layout for this apartment type (one twin USB pair per bedroom, a TV-wall cluster in the
+# lounge, high-level sockets over the kitchen worktop, and so on). Count agreement in the
+# demo therefore only shows that the engine applies the rules; position agreement is the
+# real test. Where a rule is a guess it says so in `why`.
+#
+# Distances are in metres. Placement strategies: perimeter (spread along all usable wall),
+# wall (spread along one wall), pair (two sockets either side of a wall's midpoint),
+# corners, beside_door, centre. `wall` picks the wall: longest, shortest, long_sides (the two
+# longest facing walls), bed_head (the wall the architect's bed is drawn against),
+# media_wall (the wall a TV/media unit stands against), facing_<room type> (the wall backing
+# onto that room, e.g. facing_pantry), opposite_door, north/south/east/west. A list is
+# tried in order, e.g. [media_wall, facing_lounge, longest].
+
+name: BS 7671 - apartment type A - small power
+standard: BS 7671        # the governing standard this rule set is written for
+version: 0.1-draft
+applies_to:
+  units: [W, E]          # both mirrored apartments on the floor
+
+defaults:
+  door_clearance: 0.30   # keep sockets this far from door openings
+  corner_clearance: 0.30
+  min_spacing: 0.80
+  avoid_facing: [balcony]  # the pilot apartments' lounge/dining/kitchen balcony sides are glazed folding doors
+
+rooms:
+  bedroom:
+    - {type: socket_twin_usb, count: 2, place: pair, wall: bed_head, spacing: 2.4,
+       why: "bedside pair either side of the bed head (engineer used USB twins 2.4-2.5 m apart)"}
+  lounge:
+    - {type: socket_twin_13a, count: 3, place: wall, wall: [media_wall, facing_lounge, longest],
+       why: "TV / media wall: the wall the media unit stands against, else the party wall"}
+    - {type: socket_twin_high_level, count: 1, place: wall, wall: [media_wall, facing_lounge, longest],
+       why: "high-level socket for a wall-mounted TV"}
+  kitchen:
+    - {type: socket_twin_high_level, count: 1, place: wall, wall: longest,
+       why: "worktop socket at 1200 mm by the hob run"}
+    - {type: socket_twin_13a, count: 2, place: wall, wall: facing_pantry,
+       why: "appliance sockets on the wall backing onto the pantry"}
+    - {type: socket_twin_high_level, count: 1, place: wall, wall: facing_pantry,
+       why: "worktop socket on the pantry wall"}
+    # The engineer also has two HIGHLEVEL symbols on each kitchen island; the legend says
+    # these are floor sockets for the island. Islands are not detected yet.
+  cinema:
+    - {type: socket_twin_13a, count: 3, place: wall, wall: long_sides, why: "AV equipment along the side walls"}
+    - {type: socket_twin_high_level, count: 4, place: wall, wall: long_sides,
+       why: "wall-mounted AV / speakers (guess: two per side wall)"}
+  lobby:
+    - {type: socket_twin_13a, count: 1, place: perimeter, why: "general use (cleaning)"}
+  pantry:
+    - {type: socket_twin_13a, count: 1, place: perimeter, why: "appliance"}
+  balcony:
+    - {type: socket_twin_13a, count: 1, place: wall, wall: longest, avoid_facing: [],
+       why: "the engineer used plain twins on the balconies; weatherproof (WP) is an open question"}
+  dining: []             # the engineer put no sockets in the dining zones - NFE to decide
+  wc: []                 # shaver sockets sit in the unlabelled bathrooms; not modelled yet
+
+notes:
+  - "Mounting heights other than the 1200 mm high-level socket are not on the pilot drawings; NFE must set them."
+  - "Floor sockets for kitchen islands appear in the legend but share the HIGHLEVEL block; they need their own symbol."

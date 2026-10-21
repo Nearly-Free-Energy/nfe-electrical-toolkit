@@ -1,0 +1,39 @@
+# Python
+.venv/
+__pycache__/
+*.egg-info/
+.pytest_cache/
+build/
+dist/
+
+# Client drawings and everything derived from them never go into the repository:
+# drawings, conversions, overlays, renders, sheet plots and per-floor reports.
+work/
+*.dwg
+*.dxf
+*.dwg2dxf.log
+overlays/
+renders/
+sheets/
+*.png
+*.pdf
+floor.json
+symbols.json
+block_audit.json
+rooms.json
+checks.json
+checks.md
+comparison.json
+comparison.md
+validation.json
+demo_summary.json
+timings.json
+device_counts.csv
+
+# Credentials
+.env
+*.pem
+*.key
+
+# Internal pilot report (client project details): kept out of the public repository.
+FINDINGS.md
