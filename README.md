@@ -23,7 +23,15 @@ You need Python 3.11 or newer (tested with 3.14.7) and the LibreDWG command-line
 - Linux: your distribution's `libredwg` package, or build from <https://www.gnu.org/software/libredwg/>
 - Windows: untested. LibreDWG publishes Windows builds; point the toolkit at them with `NFE_DWG2DXF`, `NFE_DXF2DWG` and `NFE_DWGREAD` if they are not on `PATH`.
 
-Then, from this folder:
+Then clone the repository and set up a virtual environment in it:
+
+```bash
+git clone https://github.com/Nearly-Free-Energy/nfe-electrical-toolkit.git
+```
+
+```bash
+cd nfe-electrical-toolkit
+```
 
 ```bash
 python3 -m venv .venv
