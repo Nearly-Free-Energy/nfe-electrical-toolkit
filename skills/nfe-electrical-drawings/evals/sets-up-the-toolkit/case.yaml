@@ -1,0 +1,9 @@
+schema_version: "1.1"
+name: sets-up-the-toolkit
+expected_outcome: |
+  Claude checks the machine with the skill's setup.py --check, then runs setup.py, which clones
+  the toolkit at the pinned release into ~/nfe-electrical-toolkit, builds its venv and runs the
+  synthetic tests. The reply says the tests passed and which release is installed, names the
+  toolkit and work folders, mentions LibreDWG, and says what the engineer needs to give next
+  (an architect's drawing and its governing standard, BS 7671 by default). It doesn't hand-roll
+  its own install.

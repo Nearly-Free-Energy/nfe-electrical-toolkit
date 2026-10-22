@@ -1,0 +1,12 @@
+schema_version: "1.1"
+name: proposes-before-writing
+expected_outcome: |
+  Claude opens the drawing with the BS 7671 standard and a floor id, reports the two rooms
+  (Lounge and Bedroom) and the check findings (no legend found; the lounge has no sockets),
+  dry-runs the type A rules on those rooms (selected by room id, since the floor has no W/E
+  units), writes the proposal to a separate proposal overlay, renders it, shows the render's
+  path with the counts (two USB twins at the bed head, three twins and a high-level socket in
+  the lounge), and asks the engineer to approve before writing the deliverable overlay. The
+  architect's file is unchanged.
+context:
+  scaffold_script: place-files.sh
