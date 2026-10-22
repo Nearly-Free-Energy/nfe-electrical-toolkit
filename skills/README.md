@@ -48,11 +48,10 @@ Only an Owner (Primary Owner or Owner) can add or remove organisation-wide skill
    - If the skill appears in chat but not in local Code-tab sessions, check whether the
      organisation's managed settings set `disableSideloadFlags`. Anthropic's desktop docs say
      that setting stops local sessions loading account skills.
-5. **Update it** when a new release is pinned. There is no in-place replace for an
-   Owner-uploaded skill, so remove the old one first: on the **Inventory** tab, choose
-   **Remove from library** from its row's menu. Then upload the new zip. Removing the skill
-   doesn't touch anyone's installed toolkit or work folder. Each engineer's next session finds
-   the new pin and updates the toolkit.
+5. **Update it** when a new release is pinned. On the **Inventory** tab, open the skill's row
+   menu (⋮), choose **Upload new version** and select the new zip. **Version history** in the
+   same menu lists the earlier uploads. Each engineer's next session finds the new pin and
+   updates the toolkit. Their installed toolkit and work folder are otherwise untouched.
 
 The skill has to work on the engineer's own computer. In a claude.ai chat, which runs in
 Anthropic's sandbox, it only explains that it needs the desktop app's Code tab or Claude Code.
@@ -70,7 +69,7 @@ Anthropic's sandbox, it only explains that it needs the desktop app's Code tab o
    new pin. It must end `ALL PASSED`. To test before pushing the tag, run it against a local
    bare clone that carries the tag: `bash skills/test_setup.sh --repo file:///path/to/bare.git`.
 4. Build the zip, attach it to a GitHub release for the tag, and have a Team owner upload it
-   in place of the previous version.
+   with **Upload new version** (step 5 above).
 5. Each engineer's next session finds the new pin (`setup.py --check` exits 3, "needs
    updating"), and Claude runs the update: fetch, check out the new tag, reinstall, re-test.
 
