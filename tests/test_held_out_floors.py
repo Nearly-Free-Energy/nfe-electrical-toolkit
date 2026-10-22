@@ -3,7 +3,9 @@
 The synthetic drawing is one 4 x 4 m bedroom in metres with one socket, so the floor has no
 mirrored units. Its small power sheet carries a stale copy of the plan viewport that is
 larger than the real one but looks at empty model space, and a line pasted far off the
-paper. A second sheet is named but empty.
+paper. A second sheet is named but empty. A second drawing has a 5 x 5 m bedroom whose bed,
+with bedside tables, stands against the west wall with its head either free or against the
+north wall.
 """
 from __future__ import annotations
 
@@ -18,8 +20,10 @@ from shapely.geometry import box
 
 from nfe_electrical.apartments import detect_mirrored_units
 from nfe_electrical.checks import check_sheets
+from nfe_electrical.fixtures import find_bed
 from nfe_electrical.floor import Floor
 from nfe_electrical.overlay import Overlay
+from nfe_electrical.placement import learn_wall_style, place_device
 from nfe_electrical.render import plot_sheet, sheet_page
 from nfe_electrical.rooms import Room
 from nfe_electrical.rules import apply_rules, load_rules
@@ -50,6 +54,30 @@ def _drawing(path: Path) -> dict:
     doc.layouts.new("ICT LAYOUT")
     doc.saveas(path)
     return {"path": path, "plan": plan.dxf.handle, "stale": stale.dxf.handle, "stray": stray.dxf.handle}
+
+
+def _bedroom_with_bed(path: Path, head_y: float) -> Path:
+    """A 5 x 5 m bedroom; the bed (1.8 m mattress, 0.5 m bedside tables, 2.1 m long) stands 5 cm off
+    the west wall with its head at `head_y`, the north wall's face being at y = 5."""
+    doc = ezdxf.new("R2018", setup=True)
+    doc.header["$INSUNITS"] = 6
+    for name in ("wall", "Text Room", "sockets wall", "furniture"):
+        doc.layers.add(name)
+    msp = doc.modelspace()
+    msp.add_lwpolyline([(0, 0), (5, 0), (5, 5), (0, 5)], close=True, dxfattribs={"layer": "wall"})
+    msp.add_lwpolyline([(-0.2, -0.2), (5.2, -0.2), (5.2, 5.2), (-0.2, 5.2)], close=True, dxfattribs={"layer": "wall"})
+    msp.add_text("Bedroom", height=0.15, dxfattribs={"layer": "Text Room"}).set_placement((3.5, 0.8))
+    blk = doc.blocks.new("SOCKET")
+    blk.add_lwpolyline([(-0.13, -0.07), (0.13, -0.07), (0.13, 0.07), (-0.13, 0.07)], close=True)
+    blk.add_attdef("S", insert=(0.0, 0.1), text="S", dxfattribs={"height": 0.05})
+    msp.add_blockref("SOCKET", (4.0, 0.15), dxfattribs={"layer": "sockets wall"}).add_auto_attribs({"S": "S"})
+    h, t = head_y, head_y - 0.45  # head edge, and where the bedside tables end
+    msp.add_lwpolyline([(0.05, h), (0.05, t), (0.55, t), (0.55, h - 2.1), (2.35, h - 2.1), (2.35, t), (2.85, t),
+                        (2.85, h)], close=True, dxfattribs={"layer": "furniture"})
+    doc.layouts.new("SMALLPOWER").add_viewport(center=(150, 150), size=(200, 140), view_center_point=(2.5, 2.5),
+                                               view_height=7)
+    doc.saveas(path)
+    return path
 
 
 @pytest.fixture(scope="module")
@@ -135,3 +163,25 @@ def test_demo_runs_on_a_floor_without_mirrored_units(drawing, tmp_path):
     assert any("no mirrored units" in w for w in summary["rule_warnings"])
     assert "no mirrored units found" in (work / "T3" / "comparison.md").read_text(encoding="utf-8")
     assert all(Path(s["file"]).is_file() for s in summary["sheets"])
+
+
+@pytest.mark.parametrize("head_y, note, face_y, west_x", [(3.6, "no wall right behind it", None, 0.25),
+                                                          (4.95, "the bed head wall", 5.0, 0.35)])
+def test_bedside_pair_goes_at_the_head_shown_by_the_bedside_tables(tmp_path, head_y, note, face_y, west_x):
+    # The bed touches the west wall at its side. The head is the side the bedside tables are on: with no
+    # wall right behind it the pair goes at the bed head itself (a headboard, or only a dashed beam line
+    # behind it), centred on the mattress; with one, on that wall, where the west socket keeps the rule's
+    # 0.3 m corner clearance.
+    f = Floor.open(_bedroom_with_bed(tmp_path / "bed.dxf", head_y), tmp_path / "work", floor_id="T5")
+    bed = find_bed(f, f.rooms.get("Bedroom"))
+    assert bed is not None and bed.head_side() == "north"
+    ov = Overlay.open(f, "t_bed", fresh=True)
+    res = place_device(f, ov, "Bedroom", "socket_twin_usb", {"strategy": "pair", "wall": "bed_head", "spacing": 2.4},
+                       dry_run=True)
+    style = learn_wall_style(f, "SOCKET")
+    want_y = (face_y if face_y is not None else bed.bbox[3]) - style.face_offset_m
+    pts = sorted(tuple(p["target"]) for p in res["placed"])
+    assert len(pts) == 2 and note in res["placed"][0]["note"]
+    for (x, y), want_x in zip(pts, (west_x, 1.45 + 1.2)):
+        assert abs(x - want_x) < 0.05 and abs(y - want_y) < 0.03
+    assert all(abs((p["rotation"] - style.rotation_for(0.0, 1.0) + 180) % 360 - 180) < 1 for p in res["placed"])
