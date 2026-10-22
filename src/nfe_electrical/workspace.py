@@ -6,12 +6,16 @@
 
 The toolkit only ever writes inside <workdir>. Received drawings are copied into a
 new, empty input directory and made read-only; the originals are never opened for writing.
+On Windows the read-only flag also stops shutil.rmtree, so delete a work folder with
+`remove_workdir()` (or in Explorer, or with `Remove-Item -Recurse -Force`).
 """
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import stat
+import sys
 from pathlib import Path
 
 from .convert import sha256_file
@@ -73,3 +77,20 @@ class Workspace:
         shutil.copyfile(src, dest)
         dest.chmod(stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH)
         return dest
+
+
+def _clear_readonly_and_retry(func, path, _exc) -> None:
+    os.chmod(path, os.stat(path).st_mode | stat.S_IWRITE)
+    func(path)
+
+
+def remove_workdir(root: str | Path) -> None:
+    """Delete a work folder, read-only input copies included (Windows will not delete a
+    read-only file, so the flag is cleared first)."""
+    root = Path(root).expanduser().resolve()
+    if not ((root / "input").is_dir() and (root / "cache").is_dir()):
+        raise ValueError(f"{root} does not look like a work folder (no input and cache folders); not deleting it")
+    if sys.version_info >= (3, 12):
+        shutil.rmtree(root, onexc=_clear_readonly_and_retry)
+    else:  # Python 3.11
+        shutil.rmtree(root, onerror=_clear_readonly_and_retry)

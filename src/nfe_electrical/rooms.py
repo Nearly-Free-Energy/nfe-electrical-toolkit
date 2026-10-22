@@ -195,7 +195,7 @@ class RoomSet:
         }
 
     def write(self, path) -> str:
-        with open(path, "w") as fh:
+        with open(path, "w", encoding="utf-8") as fh:
             json.dump(self.to_json(), fh, indent=1)
         return str(path)
 

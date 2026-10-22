@@ -75,7 +75,8 @@ def _floor(floor_id: str) -> Floor:
 
 def _overlay(floor: Floor, name: str) -> Overlay:
     key = (floor.floor_id, check_id(name, "overlay name"))
-    if key not in STATE["overlays"]:
+    # after a failed save (file open in a CAD program), reload it so that repeating the step adds nothing twice
+    if key not in STATE["overlays"] or STATE["overlays"][key].save_failed:
         STATE["overlays"][key] = Overlay.open(floor, name)
     return STATE["overlays"][key]
 
@@ -185,8 +186,8 @@ def run_checks(floor_id: str, which: str = "all") -> dict:
     out = f.out_dir
     if which == "all":
         res = checks_mod.run_all_checks(f)
-        (out / "checks.json").write_text(json.dumps(_jsonable(res), indent=1, default=str))
-        (out / "checks.md").write_text(checks_mod.checks_markdown(res))
+        (out / "checks.json").write_text(json.dumps(_jsonable(res), indent=1, default=str), encoding="utf-8")
+        (out / "checks.md").write_text(checks_mod.checks_markdown(res), encoding="utf-8")
         checks_mod.write_device_counts_csv(res["device_counts"], out / "device_counts.csv")
         issues = res["title_blocks"]["issues"] + res["legends"]["issues"] + res["device_counts"]["issues"]
         return _jsonable({"summary": res["summary"], "issues": issues,

@@ -510,7 +510,8 @@ def device_counts(floor, categories: set[str] | None = None) -> dict:
 
 def write_device_counts_csv(result: dict, path) -> str:
     types = sorted({t for row in result["rooms"] for t in row["counts"]})
-    with open(path, "w", newline="") as fh:
+    # UTF-8 with a byte-order mark: without it Excel reads the file in the ANSI code page and garbles room names
+    with open(path, "w", newline="", encoding="utf-8-sig") as fh:
         w = csv.writer(fh)
         w.writerow(["room_id", "name", "unit", "room_type", "area_m2", "status", *types, "total"])
         for row in result["rooms"]:

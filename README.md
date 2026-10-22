@@ -17,13 +17,15 @@ Phase 1 was built and demonstrated on one floor of a real NFE project (the pilot
 
 ## Install
 
-You need Python 3.11 or newer (tested with 3.14.7) and the LibreDWG command-line tools (`dwg2dxf`; `dxf2dwg` and `dwgread` for the optional round-trip check).
+You need Python 3.11 or newer and the LibreDWG command-line tools (`dwg2dxf`; `dxf2dwg` and `dwgread` for the optional round-trip check). The toolkit runs on macOS, Windows and Linux: CI runs the tests on all three with Python 3.11 and 3.13, and the pilot used 3.14.7 on macOS.
 
 - macOS: `brew install libredwg`
 - Linux: your distribution's `libredwg` package, or build from <https://www.gnu.org/software/libredwg/>
-- Windows: untested. LibreDWG publishes Windows builds; point the toolkit at them with `NFE_DWG2DXF`, `NFE_DXF2DWG` and `NFE_DWGREAD` if they are not on `PATH`.
+- Windows: LibreDWG's release zip, unzipped into `%LOCALAPPDATA%\Programs\LibreDWG` (see [Windows](#windows))
 
-Then clone the repository and set up a virtual environment in it:
+The toolkit looks for the LibreDWG programs on `PATH`, then in those usual places. If you keep them anywhere else, set `NFE_DWG2DXF`, `NFE_DXF2DWG` and `NFE_DWGREAD` to their full paths.
+
+Then clone the repository and set up a virtual environment in it (on Windows, follow [Windows](#windows) instead):
 
 ```bash
 git clone https://github.com/Nearly-Free-Energy/nfe-electrical-toolkit.git
@@ -42,6 +44,80 @@ python3 -m venv .venv
 ```
 
 Always run the toolkit's Python with `-I` (isolated mode), so nothing in the current directory or in a drawing folder can be imported by accident.
+
+## Windows
+
+The toolkit runs on Windows 10 and 11. Run these commands in PowerShell.
+
+1. Install Python 3.11 or newer from <https://www.python.org/downloads/windows/> (the installer includes the `py` launcher), and [Git for Windows](https://git-scm.com/download/win).
+2. Install LibreDWG from its Windows release zip. Unzip it into `%LOCALAPPDATA%\Programs\LibreDWG`, so that `dwg2dxf.exe` sits directly in that folder. The toolkit looks there after `PATH`, so nothing else needs setting, and no administrator rights are needed. MSYS2 has no LibreDWG package.
+
+```powershell
+Invoke-WebRequest https://github.com/LibreDWG/libredwg/releases/download/0.14/libredwg-0.14-win64.zip -OutFile "$env:TEMP\libredwg-0.14-win64.zip"
+```
+
+```powershell
+(Get-FileHash "$env:TEMP\libredwg-0.14-win64.zip").Hash
+```
+
+That should print `1AD7E15344D20B3426C3435B078D82FB84B35062815946B2CCA9C5FC9810FEA8`, the SHA-256 that GitHub lists for the [LibreDWG 0.14 release](https://github.com/LibreDWG/libredwg/releases/tag/0.14).
+
+```powershell
+Expand-Archive "$env:TEMP\libredwg-0.14-win64.zip" -DestinationPath "$env:LOCALAPPDATA\Programs\LibreDWG"
+```
+
+```powershell
+& "$env:LOCALAPPDATA\Programs\LibreDWG\dwg2dxf.exe" --version
+```
+
+3. Clone the repository and set up a virtual environment in it:
+
+```powershell
+git clone https://github.com/Nearly-Free-Energy/nfe-electrical-toolkit.git
+```
+
+```powershell
+cd nfe-electrical-toolkit
+```
+
+```powershell
+py -m venv .venv
+```
+
+```powershell
+.venv\Scripts\python.exe -I -m pip install -e ".[test]"
+```
+
+From then on, use `.venv\Scripts\python.exe` wherever this README says `.venv/bin/python`, for example:
+
+```powershell
+.venv\Scripts\python.exe -I -m nfe_electrical.cli analyse "C:\path\to\F6.dwg" --workdir work --floor-id F6
+```
+
+**Claude Desktop** reads `%APPDATA%\Claude\claude_desktop_config.json` (Settings > Developer > Edit Config opens it). Add the server there and restart the app. JSON needs every backslash doubled:
+
+```json
+{
+  "mcpServers": {
+    "nfe-electrical": {
+      "command": "C:\\path\\to\\nfe-electrical-toolkit\\.venv\\Scripts\\python.exe",
+      "args": ["-I", "-m", "nfe_electrical.mcp_server", "--workdir", "C:\\path\\to\\nfe-electrical-work"]
+    }
+  }
+}
+```
+
+**Claude Code**:
+
+```powershell
+claude mcp add nfe-electrical --scope user -- C:\path\to\nfe-electrical-toolkit\.venv\Scripts\python.exe -I -m nfe_electrical.mcp_server --workdir C:\path\to\nfe-electrical-work
+```
+
+What is different on Windows:
+
+- Windows does not let one program replace a file that another program has open. If an overlay DXF is open in a CAD program or viewer when the toolkit saves it, the toolkit stops with a message and keeps the new version next to it as `<name>.tmp.dxf`. Close the file and run the step again: it starts from the overlay as last saved, so nothing is added twice.
+- The input copies in `<workdir>\input\` are read-only, so `Remove-Item -Recurse` without `-Force`, and Python's `shutil.rmtree`, refuse to delete a work folder. Delete it in Explorer, with `Remove-Item -Recurse -Force <workdir>`, or from Python with `nfe_electrical.workspace.remove_workdir("<workdir>")`.
+- Reports are written as UTF-8 whatever the system code page. `device_counts.csv` starts with a byte-order mark, so Excel shows room names with accents or symbols correctly.
 
 ## Use it from the command line
 
@@ -105,7 +181,7 @@ Or commit a `.mcp.json` like this to a project:
 }
 ```
 
-**Claude Desktop**: add the same `mcpServers` entry to `claude_desktop_config.json` (macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`; Windows: `%APPDATA%\Claude\claude_desktop_config.json`) and restart the app. On Windows, use `...\.venv\Scripts\python.exe`.
+**Claude Desktop**: add the same `mcpServers` entry to `claude_desktop_config.json` (macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`; Windows: `%APPDATA%\Claude\claude_desktop_config.json`, with the paths shown under [Windows](#windows)) and restart the app.
 
 Tools:
 
@@ -154,7 +230,7 @@ The strategies are `perimeter`, `wall`, `pair`, `corners`, `beside_door`, `centr
 
 ## Safety and data
 
-- Received drawings are untrusted data. They are copied into a new, empty `input/<floor>/` folder and made read-only, and the originals are never opened for writing. `dwg2dxf` runs with a timeout from the cache folder, and Python runs with `-I`.
+- Received drawings are untrusted data. They are copied into a new, empty `input/<floor>/` folder and made read-only, and the originals are never opened for writing. `dwg2dxf` runs with a timeout from the cache folder, and Python runs with `-I`. The LibreDWG programs are never taken from the current folder, although Windows normally looks there first.
 - The toolkit writes only inside its work folder and has no network code. When Claude uses the MCP server, tool results (room names, title-block text, renders) become conversation content and go to Anthropic under the Team plan's terms. Phone numbers are masked in check outputs.
 - Text in a drawing is reported as data. The server instructions tell the model never to treat it as an instruction.
 
@@ -164,7 +240,9 @@ The strategies are `perimeter`, `wall`, `pair`, `corners`, `beside_door`, `centr
 .venv/bin/python -I -m pytest -q
 ```
 
-`tests/test_synthetic.py` builds a small drawing on the fly: a walled room, a sheet with a viewport, and a socket block like NFE's existing ones, whose graphics sit 950 m from its base point. It checks units, rooms, wall-facing placement, base-point correction, dry runs, circuits, sheet plotting, the standard check and dashed-line detection. `tests/test_f6_integration.py` runs on the real F6 drawing when it is present in `work/input/F6/`, or when `NFE_F6_DWG` points to it.
+`tests/test_synthetic.py` builds a small drawing on the fly: a walled room, a sheet with a viewport, and a socket block like NFE's existing ones, whose graphics sit 950 m from its base point. It checks units, rooms, wall-facing placement, base-point correction, dry runs, circuits, sheet plotting, the standard check and dashed-line detection. It also covers what differs on Windows: UTF-8 reports, an overlay held open by another program, read-only input copies, finding LibreDWG, and (when LibreDWG is installed) reading a DWG made from the synthetic drawing. `tests/test_f6_integration.py` runs on the real F6 drawing when it is present in `work/input/F6/`, or when `NFE_F6_DWG` points to it.
+
+CI ([`.github/workflows/tests.yml`](.github/workflows/tests.yml)) runs pyflakes and the tests on Windows, macOS and Linux with Python 3.11 and 3.13. A separate Windows job installs LibreDWG's release zip as described under [Windows](#windows) and sets `NFE_REQUIRE_LIBREDWG=1`, so the DWG test must run there rather than skip.
 
 ## Licences
 

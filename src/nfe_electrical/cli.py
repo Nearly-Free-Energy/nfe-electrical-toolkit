@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import logging
 import sys
@@ -26,8 +27,8 @@ def cmd_analyse(args) -> dict:
     paths["rooms_json"] = f.rooms.write(out / "rooms.json")
     paths["rooms_png"] = render_mod.render_rooms(f, out / "rooms.png")
     res = checks_mod.run_all_checks(f)
-    (out / "checks.json").write_text(json.dumps(res, indent=1, default=str))
-    (out / "checks.md").write_text(checks_mod.checks_markdown(res))
+    (out / "checks.json").write_text(json.dumps(res, indent=1, default=str), encoding="utf-8")
+    (out / "checks.md").write_text(checks_mod.checks_markdown(res), encoding="utf-8")
     paths["device_counts_csv"] = checks_mod.write_device_counts_csv(res["device_counts"], out / "device_counts.csv")
     s = f.summary()
     return {"floor_id": f.floor_id, "units": s["units"]["detected"], "declared_units_ok": s["units"]["declared_ok"],
@@ -45,8 +46,8 @@ def cmd_rooms(args) -> dict:
 def cmd_check(args) -> dict:
     f = _open(args)
     res = checks_mod.run_all_checks(f)
-    (f.out_dir / "checks.json").write_text(json.dumps(res, indent=1, default=str))
-    (f.out_dir / "checks.md").write_text(checks_mod.checks_markdown(res))
+    (f.out_dir / "checks.json").write_text(json.dumps(res, indent=1, default=str), encoding="utf-8")
+    (f.out_dir / "checks.md").write_text(checks_mod.checks_markdown(res), encoding="utf-8")
     return {"summary": res["summary"], "files": [str(f.out_dir / "checks.json"), str(f.out_dir / "checks.md")]}
 
 
@@ -104,6 +105,9 @@ def cmd_validate(args) -> dict:
 
 def main(argv: list[str] | None = None) -> int:
     logging.getLogger("ezdxf").setLevel(logging.WARNING)
+    if isinstance(sys.stdout, io.TextIOWrapper):
+        # `compare` prints room names; on Windows, output to a pipe or file would use the ANSI code page
+        sys.stdout.reconfigure(encoding="utf-8")
     ap = argparse.ArgumentParser(prog="nfe-elec", description="NFE electrical drawing toolkit")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
