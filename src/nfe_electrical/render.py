@@ -311,12 +311,7 @@ def plot_sheet(floor, out_path, layout: str | None = None, overlay=None, mode: s
             props.is_visible = False
 
     w_mm, h_mm = sheet.paper_size_mm
-    unit = sheet.paper_unit_mm
-    W, H = w_mm / unit, h_mm / unit
-    boxes = [_box(e, floor.geometry) for e in ps.query("INSERT LINE LWPOLYLINE")]
-    boxes = [b for b in boxes if b is not None]
-    cx = (min(b[0] for b in boxes) + max(b[2] for b in boxes)) / 2 if boxes else W / 2
-    cy = (min(b[1] for b in boxes) + max(b[3] for b in boxes)) / 2 if boxes else H / 2
+    page, off_sheet = sheet_page(floor, sheet)
 
     fig = plt.figure(figsize=(w_mm / 25.4, h_mm / 25.4))
     ax = fig.add_axes([0, 0, 1, 1])
@@ -356,8 +351,8 @@ def plot_sheet(floor, out_path, layout: str | None = None, overlay=None, mode: s
             if id(artist) not in before:
                 artist.set_clip_path(clip)
 
-    ax.set_xlim(cx - W / 2, cx + W / 2)
-    ax.set_ylim(cy - H / 2, cy + H / 2)
+    ax.set_xlim(page[0], page[2])
+    ax.set_ylim(page[1], page[3])
     ax.set_aspect("equal")
     ax.axis("off")
     out = Path(out_path)
@@ -365,6 +360,34 @@ def plot_sheet(floor, out_path, layout: str | None = None, overlay=None, mode: s
     fig.savefig(out, dpi=dpi, facecolor="white")
     plt.close(fig)
     ratio = sheet.scale_ratio(floor.to_m)
-    return {"file": str(out), "layout": sheet.layout, "paper_mm": [w_mm, h_mm], "mode": mode,
-            "plan_scale": f"1:{ratio:.0f}" if ratio else None, "overlay_entities": n_overlay,
-            "existing_symbols_hidden": len(hidden), "rooms_replaced": sorted(covered)}
+    res = {"file": str(out), "layout": sheet.layout, "paper_mm": [w_mm, h_mm], "mode": mode,
+           "plan_scale": f"1:{ratio:.0f}" if ratio else None, "overlay_entities": n_overlay,
+           "existing_symbols_hidden": len(hidden), "rooms_replaced": sorted(covered),
+           "page_window": [round(v, 4) for v in page], "off_sheet_entities": off_sheet}
+    if off_sheet:
+        res["warning"] = f"{len(off_sheet)} paper-space entities lie outside the paper and are not plotted"
+    return res
+
+
+def sheet_page(floor, sheet) -> tuple[tuple[float, float, float, float], list[dict]]:
+    """The paper-space window printed as the page, and the paper-space entities outside it.
+
+    The page is the paper size centred on the sheet's own linework and blocks (border, title block,
+    legend). Only those on the layout's limits count when the limits are the paper, as AutoCAD sets
+    them, so a symbol pasted far off the sheet cannot pull the page away from the drawing."""
+    w, h = sheet.paper_size_mm[0] / sheet.paper_unit_mm, sheet.paper_size_mm[1] / sheet.paper_unit_mm
+    found = [(e, _box(e, floor.geometry)) for e in floor.doc.paperspace(sheet.layout)]
+    found = [(e, b) for e, b in found if b is not None]
+    frame = [b for e, b in found if e.dxftype() in ("INSERT", "LINE", "LWPOLYLINE")]
+    ref = sheet.paper_limits
+    if ref is None and frame:  # no usable limits: drop what lies more than a sheet away from the rest
+        mx = float(np.median([(b[0] + b[2]) / 2 for b in frame]))
+        my = float(np.median([(b[1] + b[3]) / 2 for b in frame]))
+        ref = (mx - w, my - h, mx + w, my + h)
+    frame = [b for b in frame if ref is None or _hits(b, ref)]
+    cx = (min(b[0] for b in frame) + max(b[2] for b in frame)) / 2 if frame else w / 2
+    cy = (min(b[1] for b in frame) + max(b[3] for b in frame)) / 2 if frame else h / 2
+    page = (cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2)
+    off = [{"handle": e.dxf.handle, "type": e.dxftype(), "block": e.dxf.name if e.dxftype() == "INSERT" else None,
+            "box": [round(v, 3) for v in b]} for e, b in found if w > 0 and h > 0 and not _hits(b, page)]
+    return page, off

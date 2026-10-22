@@ -3,6 +3,8 @@
 Two of the pilot project's files declare metres but are drawn in millimetres,
 so every signal here comes from geometry: the plan viewport's plot scale, the
 drawn size of electrical symbols, room-label text heights and the plan size.
+Fewer than three signals never overrule a declared mm, cm or m: when the plan
+shows no symbols or labels, the two that remain come from the same viewport.
 """
 from __future__ import annotations
 
@@ -20,6 +22,7 @@ _RANGES = {
     "label_height_m": (0.04, 1.0),
     "plan_extent_m": (3.0, 600.0),
 }
+MIN_SIGNALS_TO_OVERRULE = 3
 
 
 @dataclass
@@ -31,6 +34,7 @@ class UnitsReport:
     declared_ok: bool
     confidence: float
     signals: list[dict] = field(default_factory=list)
+    note: str = ""
 
     @property
     def insunits(self) -> int:
@@ -67,6 +71,11 @@ def detect_units(declared_code: int, plan_scale: float | None, paper_unit_mm: fl
     best = max(tally.values()) if tally else 0
     tied = [u for u, n in tally.items() if n == best]
     detected = declared if declared in tied else ("m" if "m" in tied else tied[0])
-    confidence = round(best / len(signals), 2) if signals else 0.0
+    note = ""
+    if declared in TO_M and detected != declared and len(signals) < MIN_SIGNALS_TO_OVERRULE:
+        note = (f"only {len(signals)} geometry signal(s), voting for {detected}: too few to overrule "
+                f"the declared {declared}")
+        detected = declared
+    confidence = round(tally[detected] / len(signals), 2) if signals else 0.0
     return UnitsReport(declared_code=declared_code, declared=declared, detected=detected, to_m=TO_M[detected],
-                       declared_ok=(declared == detected), confidence=confidence, signals=signals)
+                       declared_ok=(declared == detected), confidence=confidence, signals=signals, note=note)

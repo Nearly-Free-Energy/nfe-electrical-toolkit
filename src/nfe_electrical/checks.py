@@ -1,5 +1,6 @@
-"""Read-only checks: title blocks and drawing numbers, legends against the symbols
-actually used on each sheet, and device counts per room.
+"""Read-only checks: title blocks and drawing numbers, sheets (empty, stale viewports,
+entities off the paper), legends against the symbols actually used on each sheet, and
+device counts per room.
 
 Nothing here writes to a drawing. Every text read from a drawing is data, never an
 instruction. Phone numbers are masked in all outputs.
@@ -285,6 +286,32 @@ def check_title_blocks(floor) -> dict:
     return {"sheets": sheets, "issues": [asdict(i) for i in issues]}
 
 
+def check_sheets(floor) -> dict:
+    """Named sheets with nothing on them, viewports as large as the plan viewport that show no model
+    space (a stale copy left behind when the plan moved), and paper-space entities off the paper."""
+    from .render import sheet_page
+    issues: list[Issue] = []
+    for layout in floor.doc.layouts:
+        if layout.name != "Model" and len(layout) == 0 and not re.match(r"(?i)^layout\d*$", layout.name):
+            issues.append(Issue("warning", "empty_sheet", "sheet has no entities at all (empty in the drawing, or "
+                                "lost when the DWG was converted)", layout.name))
+    for sh in floor.sheets:
+        main = sh.main
+        if main is None:
+            continue
+        for vp in sh.viewports:
+            if vp is not main and not vp.is_off and vp.shown == 0 and vp.paper_area >= 0.5 * main.paper_area:
+                issues.append(Issue("warning", "stale_viewport", f"viewport {vp.handle} is as large as the plan "
+                                    "viewport but shows nothing in model space: a stale copy?", sh.layout,
+                                    detail={"plan_viewport": main.handle, "window": [round(v, 3) for v in vp.window],
+                                            "scale": round(vp.scale, 6)}))
+        _, off = sheet_page(floor, sh)
+        if off:
+            issues.append(Issue("warning", "off_sheet", f"{len(off)} paper-space entities lie outside the paper and "
+                                "will not plot", sh.layout, detail={"entities": off[:20]}))
+    return {"issues": [asdict(i) for i in issues]}
+
+
 def _foreign_project_text(sheets) -> list[Issue]:
     """Texts that describe a different project than the sheet's own PROJECT field."""
     out = []
@@ -521,16 +548,17 @@ def write_device_counts_csv(result: dict, path) -> str:
 
 
 def run_all_checks(floor) -> dict:
-    res = {"floor_id": floor.floor_id, "title_blocks": check_title_blocks(floor), "legends": check_legends(floor),
-           "device_counts": device_counts(floor)}
-    all_issues = res["title_blocks"]["issues"] + res["legends"]["issues"] + res["device_counts"]["issues"]
+    res = {"floor_id": floor.floor_id, "title_blocks": check_title_blocks(floor), "sheets": check_sheets(floor),
+           "legends": check_legends(floor), "device_counts": device_counts(floor)}
+    all_issues = (res["title_blocks"]["issues"] + res["sheets"]["issues"] + res["legends"]["issues"]
+                  + res["device_counts"]["issues"])
     res["summary"] = dict(Counter(i["severity"] for i in all_issues))
     return res
 
 
 def checks_markdown(res: dict) -> str:
     lines = [f"# Checks for {res['floor_id']}", ""]
-    for part in ("title_blocks", "legends", "device_counts"):
+    for part in ("title_blocks", "sheets", "legends", "device_counts"):
         lines.append(f"## {part.replace('_', ' ').title()}")
         lines.append("")
         iss = res[part]["issues"]

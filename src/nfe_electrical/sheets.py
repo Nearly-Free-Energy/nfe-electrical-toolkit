@@ -4,13 +4,20 @@ LibreDWG brings the viewports of most of the pilot sheets through with `status` 
 zeroed, which tells ezdxf they are off. Nothing here trusts those fields: each
 viewport's model-space window comes from its paper centre and size, view centre
 and view height, and "viewport off" is read from bit 131072 of the flags.
+
+A sheet's main (plan) viewport is the largest live one that shows the drawing. Sheets can
+carry a stale copy of the plan viewport, left behind when the plan was moved or redrawn in
+other units, that is as large as the real one but looks at empty model space.
 """
 from __future__ import annotations
 
 import math
 from dataclasses import asdict, dataclass, field
 
+import numpy as np
 from ezdxf.document import Drawing
+
+from .basepick import first_point
 
 VIEWPORT_OFF_FLAG = 131072
 
@@ -30,6 +37,7 @@ class ViewportView:
     is_off: bool
     status_zeroed: bool
     role: str = "secondary"  # main | legend | secondary
+    shown: int = -1  # model-space entities that start inside the window (-1: not counted)
 
     @property
     def paper_area(self) -> float:
@@ -63,12 +71,25 @@ class SheetView:
     viewports: list[ViewportView] = field(default_factory=list)
     discipline: str = "unknown"
     visible_categories: dict[str, int] = field(default_factory=dict)
+    limits: tuple[float, float, float, float] | None = None  # the layout's LIMMIN/LIMMAX, paper units
+    plot_type: int | None = None  # the layout's plot area: 5 = the layout itself
 
     @property
     def main(self) -> ViewportView | None:
         for vp in self.viewports:
             if vp.role == "main":
                 return vp
+        return None
+
+    @property
+    def paper_limits(self) -> tuple[float, float, float, float] | None:
+        """The layout's limits when they are the paper itself (AutoCAD's default), else None."""
+        if not self.limits or self.paper_unit_mm <= 0:
+            return None
+        w, h = self.paper_size_mm[0] / self.paper_unit_mm, self.paper_size_mm[1] / self.paper_unit_mm
+        x0, y0, x1, y1 = self.limits
+        if w > 0 and h > 0 and abs(x1 - x0 - w) <= 0.02 * w and abs(y1 - y0 - h) <= 0.02 * h:
+            return self.limits
         return None
 
     def scale_ratio(self, to_m: float) -> float | None:
@@ -82,6 +103,7 @@ class SheetView:
             "layout": self.layout, "tab_order": self.tab_order, "paper_size_mm": list(self.paper_size_mm),
             "paper_unit_mm": round(self.paper_unit_mm, 4), "n_entities": self.n_entities,
             "discipline": self.discipline, "visible_categories": self.visible_categories,
+            "limits": [round(v, 3) for v in self.limits] if self.limits else None, "plot_type": self.plot_type,
             "viewports": [vp.as_dict() for vp in self.viewports],
         }
 
@@ -103,16 +125,26 @@ def _is_overall(vp) -> bool:
             and math.dist((d.view_center_point.x, d.view_center_point.y), (d.center.x, d.center.y)) < 1e-3)
 
 
+def _model_points(doc: Drawing) -> np.ndarray:
+    """First point of every model-space entity, for counting what each viewport shows."""
+    pts = [p for p in (first_point(e) for e in doc.modelspace()) if p is not None]
+    return np.array(pts, dtype=float).reshape(-1, 2)
+
+
 def rebuild_sheet_views(doc: Drawing) -> list[SheetView]:
+    pts = _model_points(doc)
     sheets: list[SheetView] = []
     for layout in doc.layouts:
         if layout.name == "Model":
             continue
         d = layout.dxf_layout.dxf
+        lo, hi = d.get("limmin"), d.get("limmax")
+        limits = (float(lo[0]), float(lo[1]), float(hi[0]), float(hi[1])) if lo is not None and hi is not None else None
         sheet = SheetView(
             layout=layout.name, tab_order=int(d.get("taborder", 0)),
             paper_size_mm=(float(d.get("paper_width", 0.0)), float(d.get("paper_height", 0.0))),
-            paper_unit_mm=_paper_unit_mm(layout), n_entities=len(layout),
+            paper_unit_mm=_paper_unit_mm(layout), n_entities=len(layout), limits=limits,
+            plot_type=d.get("plot_type"),
         )
         for vp in layout.viewports():
             v = vp.dxf
@@ -138,7 +170,12 @@ def rebuild_sheet_views(doc: Drawing) -> list[SheetView]:
             ))
         live = [vp for vp in sheet.viewports if not vp.is_off]
         if live:
-            max(live, key=lambda vp: vp.paper_area).role = "main"
+            for vp in live:
+                x0, y0, x1, y1 = vp.window
+                vp.shown = int(((pts[:, 0] >= x0) & (pts[:, 0] <= x1) & (pts[:, 1] >= y0) & (pts[:, 1] <= y1)).sum())
+            # the largest viewport among those that show the drawing; paper area only breaks the tie
+            top = max(vp.shown for vp in live)
+            max(live, key=lambda vp: (vp.shown >= 0.1 * top, vp.paper_area)).role = "main"
         sheets.append(sheet)
     sheets.sort(key=lambda s: (s.tab_order, s.layout))
     return sheets

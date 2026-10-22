@@ -99,6 +99,26 @@ def target_rooms(floor, rules: RuleSet, units: list[str] | None = None, rooms: l
     return out
 
 
+def scope_warnings(floor, rules: RuleSet, units: list[str] | None = None, rooms: list[str] | None = None) -> list[str]:
+    """What a units scope leaves out: rooms the rule set has rules for that sit in no wanted unit
+    (e.g. the core between two mirrored apartments), or every room on a floor with no mirrored units."""
+    if rooms or rules.applies_to.get("rooms"):
+        return []
+    want_units = units or rules.applies_to.get("units")
+    if not want_units:
+        return []
+    ruled = [r for r in floor.rooms.rooms if r.status != "failed" and not r.service and rules.rooms.get(r.room_type)]
+    left_out = [r for r in ruled if r.unit not in want_units]
+    if not left_out:
+        return []
+    scope = ", ".join(want_units)
+    if floor.mirror is None:
+        return [f"the rules apply to units {scope}, but no mirrored units were found on this floor: "
+                f"{len(left_out)} room(s) with rules got nothing"]
+    return [f"{len(left_out)} room(s) with rules sit outside units {scope} and got nothing: "
+            + ", ".join(f"{r.room_id} {r.name} [{r.unit}]" for r in left_out)]
+
+
 def apply_rules(floor, overlay, rules: RuleSet, units: list[str] | None = None, rooms: list[str] | None = None,
                 dry_run: bool = False) -> dict:
     job_standard = normalise_standard(getattr(floor, "standard", None))
@@ -107,7 +127,7 @@ def apply_rules(floor, overlay, rules: RuleSet, units: list[str] | None = None, 
                          f"governed by {job_standard}")
     t0 = time.perf_counter()
     report = {"rules": rules.name, "standard": rules.standard, "version": rules.version, "dry_run": dry_run,
-              "rooms": [], "warnings": []}
+              "rooms": [], "warnings": scope_warnings(floor, rules, units, rooms)}
     for room in target_rooms(floor, rules, units, rooms):
         room_rules = rules.rooms.get(room.room_type)
         if room_rules is None:

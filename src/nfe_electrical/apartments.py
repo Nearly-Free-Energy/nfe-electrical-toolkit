@@ -2,7 +2,10 @@
 
 The mirror axis is estimated from pairs of same-type rooms with matching areas; rooms
 on either side become units ("W"/"E" for a vertical axis, "S"/"N" for a horizontal one)
-and rooms straddling the axis (lift, foyer) form the "core".
+and rooms straddling the axis (lift, foyer) form the "core". A floor only counts as
+mirrored when at least three pairs of rooms other than service spaces (ducts, lifts,
+stairs) mirror each other: a single apartment spanning a floor can still have
+mirrored façade ducts.
 """
 from __future__ import annotations
 
@@ -34,9 +37,10 @@ class MirrorUnits:
         return asdict(self)
 
 
-def detect_mirrored_units(rooms, to_m: float, tol_m: float = 0.75, area_tol: float = 0.15) -> MirrorUnits | None:
+def detect_mirrored_units(rooms, to_m: float, tol_m: float = 0.75, area_tol: float = 0.15,
+                          min_pairs: int = 3) -> MirrorUnits | None:
     tol = tol_m / to_m
-    best = None
+    best, best_key = None, (0, 0)
     for axis in ("x", "y"):
         k, j = (0, 1) if axis == "x" else (1, 0)
         cands = []
@@ -69,12 +73,13 @@ def detect_mirrored_units(rooms, to_m: float, tol_m: float = 0.75, area_tol: flo
             used |= {a.room_id, b.room_id}
             lo, hi = (a, b) if a.polygon.centroid.coords[0][k] < b.polygon.centroid.coords[0][k] else (b, a)
             pairs.append({"a": lo.room_id, "b": hi.room_id, "type": a.room_type, "name_a": lo.name, "name_b": hi.name,
-                          "mirror_error_m": round(err * to_m, 2),
+                          "service": a.service, "mirror_error_m": round(err * to_m, 2),
                           "area_m2": [round(lo.area_m2, 1), round(hi.area_m2, 1)]})
-        if best is None or len(pairs) > best.score:
+        key = (sum(1 for p in pairs if not p["service"]), len(pairs))
+        if best is None or key > best_key:
             sides = ("W", "E") if axis == "x" else ("S", "N")
-            best = MirrorUnits(axis=axis, value=value, sides=sides, pairs=pairs, score=len(pairs))
-    if best is None or best.score < 2:
+            best, best_key = MirrorUnits(axis=axis, value=value, sides=sides, pairs=pairs, score=len(pairs)), key
+    if best is None or best_key[0] < min_pairs:
         return None
     k = 0 if best.axis == "x" else 1
     units = {best.sides[0]: [], best.sides[1]: [], "core": []}
