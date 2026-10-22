@@ -234,7 +234,8 @@ class Floor:
     def write_reports(self) -> dict[str, str]:
         out = self.out_dir
         paths = {"floor": out / "floor.json", "symbols": out / "symbols.json", "block_audit": out / "block_audit.json"}
-        paths["floor"].write_text(json.dumps(self.summary(), indent=1, default=str))
-        paths["symbols"].write_text(json.dumps([s.as_dict(self.to_m) for s in self.symbols], indent=0, default=str))
-        paths["block_audit"].write_text(json.dumps(self.block_audit.as_dict(), indent=1, default=str))
+        paths["floor"].write_text(json.dumps(self.summary(), indent=1, default=str), encoding="utf-8")
+        paths["symbols"].write_text(json.dumps([s.as_dict(self.to_m) for s in self.symbols], indent=0, default=str),
+                                    encoding="utf-8")
+        paths["block_audit"].write_text(json.dumps(self.block_audit.as_dict(), indent=1, default=str), encoding="utf-8")
         return {k: str(v) for k, v in paths.items()}

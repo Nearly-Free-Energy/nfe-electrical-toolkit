@@ -71,8 +71,8 @@ def main() -> None:
 
     with t("3 read-only checks (title blocks, legends, device counts)"):
         res = checks.run_all_checks(f)
-        (out / "checks.json").write_text(json.dumps(res, indent=1, default=str))
-        (out / "checks.md").write_text(checks.checks_markdown(res))
+        (out / "checks.json").write_text(json.dumps(res, indent=1, default=str), encoding="utf-8")
+        (out / "checks.md").write_text(checks.checks_markdown(res), encoding="utf-8")
         checks.write_device_counts_csv(res["device_counts"], out / "device_counts.csv")
 
     rules = load_rules(args.rules, f.catalogue)
@@ -106,7 +106,7 @@ def main() -> None:
 
     with t("8 validate overlays (ezdxf strict re-read + LibreDWG round trip)"):
         val = {"main": ov.validate(libredwg=True), "mirrored": ovm.validate(libredwg=True)}
-        (out / "validation.json").write_text(json.dumps(val, indent=1, default=str))
+        (out / "validation.json").write_text(json.dumps(val, indent=1, default=str), encoding="utf-8")
 
     with t("9 review renders (PNG + PDF pack)"):
         files = []
@@ -147,15 +147,16 @@ def main() -> None:
 
     total = round(time.perf_counter() - t_all, 2)
     (out / "comparison.json").write_text(json.dumps({"rules_both_units": cmp, "mirror_W_to_E": cmp_m,
-                                                     "engineer_mirror_consistency": mir}, indent=1, default=str))
+                                                     "engineer_mirror_consistency": mir}, indent=1, default=str),
+                                         encoding="utf-8")
     md = [f"# {f.floor_id} demo results", "",
           f"Governing standard: {f.standard}. Rule set: `{Path(args.rules).name}` ({rules.name}, "
           f"{rules.version}).", "",
           comparison_markdown(cmp, mir, "Rules applied to both units independently"),
           comparison_markdown(cmp_m, None, f"Unit {units[0]} generated from rules, then mirrored onto unit {units[1]}")]
-    (out / "comparison.md").write_text("\n".join(md))
+    (out / "comparison.md").write_text("\n".join(md), encoding="utf-8")
     timings = {"steps_s": t.steps, "total_s": total, "floor_internal": f.timings}
-    (out / "timings.json").write_text(json.dumps(timings, indent=1))
+    (out / "timings.json").write_text(json.dumps(timings, indent=1), encoding="utf-8")
     summary = {
         "floor": f.floor_id, "reports": reports, "overlay": str(ov.path), "overlay_mirrored": str(ovm.path),
         "rooms": rs.summary(), "check_issues": res["summary"], "devices_placed": rep["devices_placed"],
@@ -167,7 +168,7 @@ def main() -> None:
                 "libredwg_inserts_match": v.get("libredwg", {}).get("inserts_match"),
                 "libredwg_attribs_match": v.get("libredwg", {}).get("attribs_match")} for k, v in val.items()},
         "renders": files, "sheets": sheet_pdfs, "timings": timings}
-    (out / "demo_summary.json").write_text(json.dumps(summary, indent=1, default=str))
+    (out / "demo_summary.json").write_text(json.dumps(summary, indent=1, default=str), encoding="utf-8")
     print(json.dumps({k: summary[k] for k in ("rooms", "check_issues", "devices_placed", "circuit", "comparison",
                                               "mirror_comparison", "validation")}, indent=1, default=str))
     print(f"total {total} s; outputs in {out}")

@@ -25,7 +25,7 @@ from ezdxf.math import Matrix44, Vec3
 
 from . import __version__
 from .catalogue import DeviceType, strip_bound_prefix
-from .convert import find_tool
+from .convert import find_tool, replace_file
 from .workspace import check_id
 
 APPID = "NFE_TOOLKIT"
@@ -43,6 +43,7 @@ class Overlay:
         self.doc = doc
         self.msp = doc.modelspace()
         self.recentre_blocks = recentre_blocks
+        self.save_failed = False  # True when the last save could not replace the file (memory and file differ)
         self._geom: dict[str, tuple[float, float]] = {}
 
     # ------------------------------------------------------------ files
@@ -91,7 +92,12 @@ class Overlay:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self.path.with_suffix(".tmp.dxf")
         self.doc.saveas(str(tmp))
-        tmp.replace(self.path)
+        try:
+            replace_file(tmp, self.path)  # on Windows this stops with a clear message while a CAD program has it open
+        except PermissionError:
+            self.save_failed = True
+            raise
+        self.save_failed = False
         return str(self.path)
 
     def _purge_foreign_layers(self) -> None:
@@ -283,7 +289,8 @@ class Overlay:
         except Exception as exc:  # LibreDWG not installed
             return {"ran": False, "reason": str(exc)}
         out = {"ran": True}
-        with tempfile.TemporaryDirectory(prefix="nfe-overlay-check-") as td:
+        # ignore_cleanup_errors: on Windows a virus scanner may still be holding the test DWG
+        with tempfile.TemporaryDirectory(prefix="nfe-overlay-check-", ignore_cleanup_errors=True) as td:
             tdir = Path(td)
             src = tdir / "overlay.dxf"
             src.write_bytes(self.path.read_bytes())

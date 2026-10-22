@@ -2,14 +2,24 @@
 
 The drawing is one 4 x 4 m room in metres, a room label, and a SOCKET block like NFE's existing ones
 drawn in millimetres with its graphics ~950 m from the block's base point.
+
+The last tests cover what differs on Windows: text encodings, files held open by another program,
+read-only input copies and finding LibreDWG. The LibreDWG test skips when LibreDWG is not installed,
+unless NFE_REQUIRE_LIBREDWG is set (as in CI's Windows LibreDWG job).
 """
 from __future__ import annotations
 
+import csv
 import math
+import os
+import subprocess
+from pathlib import Path
 
 import ezdxf
 import pytest
 
+from nfe_electrical import cli, convert, mcp_server
+from nfe_electrical.convert import ConversionError, find_tool
 from nfe_electrical.floor import Floor
 from nfe_electrical.overlay import Overlay
 from nfe_electrical.placement import circuit_run, parse_rule, place_device
@@ -17,6 +27,7 @@ from nfe_electrical.rooms import dashed_chains
 from nfe_electrical.render import plot_sheet
 from nfe_electrical.rules import apply_rules, load_rules, normalise_standard, resolve_count
 from nfe_electrical.units import detect_units
+from nfe_electrical.workspace import Workspace, remove_workdir
 
 FAR = (946933.0, -52586.0)  # where the pilot drawings' SOCKET block draws, in block units
 SCALE = 0.00129
@@ -32,9 +43,8 @@ def _socket_block(doc):
     return blk
 
 
-@pytest.fixture(scope="module")
-def floor(tmp_path_factory):
-    tmp = tmp_path_factory.mktemp("synthetic")
+def _drawing(path, label="Bedroom", socket=True):
+    """Write the synthetic drawing to `path` (DXF) and return the path."""
     doc = ezdxf.new("R2018", setup=True)
     doc.header["$INSUNITS"] = 6
     for name in ("wall", "Text Room", "sockets wall"):
@@ -42,18 +52,24 @@ def floor(tmp_path_factory):
     msp = doc.modelspace()
     msp.add_lwpolyline([(0, 0), (4, 0), (4, 4), (0, 4)], close=True, dxfattribs={"layer": "wall"})
     msp.add_lwpolyline([(-0.2, -0.2), (4.2, -0.2), (4.2, 4.2), (-0.2, 4.2)], close=True, dxfattribs={"layer": "wall"})
-    msp.add_text("Bedroom", height=0.15, dxfattribs={"layer": "Text Room"}).set_placement((1.5, 2.0))
-    _socket_block(doc)
-    # one existing socket against the south wall, back (block -y) to the wall, drawn centre 0.265 m off it
-    g_cy = FAR[1] + 2.5  # centre of the block's drawn extents (box -200..-92 and stem +3..+205)
-    ref = msp.add_blockref("SOCKET", (2.0 - SCALE * FAR[0], 0.265 - SCALE * g_cy),
-                           dxfattribs={"layer": "sockets wall", "xscale": SCALE, "yscale": SCALE})
-    ref.add_auto_attribs({"S": "S"})
+    msp.add_text(label, height=0.15, dxfattribs={"layer": "Text Room"}).set_placement((1.5, 2.0))
+    if socket:
+        _socket_block(doc)
+        # one existing socket against the south wall, back (block -y) to the wall, drawn centre 0.265 m off it
+        g_cy = FAR[1] + 2.5  # centre of the block's drawn extents (box -200..-92 and stem +3..+205)
+        ref = msp.add_blockref("SOCKET", (2.0 - SCALE * FAR[0], 0.265 - SCALE * g_cy),
+                               dxfattribs={"layer": "sockets wall", "xscale": SCALE, "yscale": SCALE})
+        ref.add_auto_attribs({"S": "S"})
     lay = doc.layouts.new("SMALLPOWER")
     lay.add_viewport(center=(6, 4), size=(10, 7), view_center_point=(2, 2), view_height=7)
-    src = tmp / "synthetic.dxf"
-    doc.saveas(src)
-    return Floor.open(src, tmp / "work", floor_id="T1")
+    doc.saveas(path)
+    return path
+
+
+@pytest.fixture(scope="module")
+def floor(tmp_path_factory):
+    tmp = tmp_path_factory.mktemp("synthetic")
+    return Floor.open(_drawing(tmp / "synthetic.dxf"), tmp / "work", floor_id="T1")
 
 
 def test_reader_finds_symbol_by_drawn_centre(floor):
@@ -130,12 +146,12 @@ def test_rule_sets_must_match_the_job_standard(floor, tmp_path):
     assert normalise_standard("bs7671") == "BS 7671" and normalise_standard(None) == "BS 7671"
     rules_file = tmp_path / "iec.yaml"
     rules_file.write_text("name: test\nstandard: IEC 60364\nrooms:\n  bedroom:\n"
-                          "    - {type: socket_twin_13a, count: 1, place: perimeter}\n")
+                          "    - {type: socket_twin_13a, count: 1, place: perimeter}\n", encoding="utf-8")
     rules = load_rules(rules_file, floor.catalogue)
     assert floor.standard == "BS 7671"
     with pytest.raises(ValueError, match="governed by BS 7671"):
         apply_rules(floor, Overlay.open(floor, "t_std", fresh=True), rules)
-    (tmp_path / "none.yaml").write_text("name: x\nrooms: {}\n")
+    (tmp_path / "none.yaml").write_text("name: x\nrooms: {}\n", encoding="utf-8")
     with pytest.raises(ValueError, match="which standard"):
         load_rules(tmp_path / "none.yaml", floor.catalogue)
 
@@ -166,3 +182,105 @@ def test_dashed_lines_are_recognised():
     found = dashed_chains(dashes + [solid] + short_pair, 1.0)
     assert {id(d) for d in dashes} <= found
     assert id(solid) not in found and not ({id(s) for s in short_pair} & found)
+
+
+# ---------------------------------------------------------------- Windows and other platforms
+def test_reports_are_utf8(tmp_path):
+    # Ω is outside cp1252, the code page Python 3.11-3.14 writes text files in on most Windows machines
+    src = _drawing(tmp_path / "plan.dxf", label="Bedroom Ω", socket=False)
+    cli.main(["analyse", str(src), "--workdir", str(tmp_path / "work"), "--floor-id", "U1"])
+    out = tmp_path / "work" / "U1"
+    assert "R01 Bedroom Ω" in (out / "checks.md").read_text(encoding="utf-8")  # "... has no socket outlets"
+    with open(out / "device_counts.csv", newline="", encoding="utf-8-sig") as fh:  # with a BOM, for Excel
+        assert next(csv.DictReader(fh))["name"] == "Bedroom Ω"
+
+
+def test_overlay_open_in_another_program(floor, monkeypatch):
+    ov = Overlay.open(floor, "t_open", fresh=True)
+    ov.save()
+    monkeypatch.setitem(mcp_server.STATE["overlays"], (floor.floor_id, "t_open"), ov)
+    with monkeypatch.context() as m, open(ov.path, "rb"):  # held open, as a CAD program holds a drawing
+        if os.name != "nt":  # only Windows refuses to replace a file that is open; pretend elsewhere
+            def refuse(self, target):
+                raise PermissionError(13, "Permission denied")
+            m.setattr(Path, "replace", refuse)
+        with pytest.raises(PermissionError, match="Close it and try again"):
+            place_device(floor, ov, "Bedroom", "socket_twin_13a", "wall:north")
+    assert ov.save_failed and ov.path.with_suffix(".tmp.dxf").is_file()  # the new version is kept
+    again = mcp_server._overlay(floor, "t_open")  # the MCP server starts again from the saved file ...
+    assert again is not ov and again.devices() == []
+    place_device(floor, again, "Bedroom", "socket_twin_13a", "wall:north")  # ... so repeating the step adds one socket
+    assert not again.save_failed and len(Overlay.open(floor, "t_open").devices()) == 1
+
+
+def test_work_folder_with_read_only_inputs_can_be_removed(tmp_path):
+    ws = Workspace(tmp_path / "work")
+    copy = ws.import_drawing(_drawing(tmp_path / "plan.dxf"), "T3")
+    assert not os.access(copy, os.W_OK)  # the input copy is read-only, which stops shutil.rmtree on Windows
+    remove_workdir(ws.root)
+    assert not ws.root.exists()
+    with pytest.raises(ValueError, match="does not look like a work folder"):
+        remove_workdir(tmp_path)
+
+
+def test_find_tool_ignores_the_current_folder(tmp_path, monkeypatch):
+    # shutil.which on Windows looks in the current folder first: a folder of drawings must not supply dwg2dxf
+    exe = "dwg2dxf.exe" if os.name == "nt" else "dwg2dxf"
+    (tmp_path / exe).write_bytes(b"")
+    (tmp_path / exe).chmod(0o755)
+    (tmp_path / "bin").mkdir()
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PATH", str(tmp_path / "bin"))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "AppData"))
+    monkeypatch.delenv("NFE_DWG2DXF", raising=False)
+    monkeypatch.setattr(convert, "_COMMON_PATHS", ())
+    with pytest.raises(ConversionError, match="not found"):
+        find_tool("dwg2dxf")
+
+
+def test_find_tool_on_windows(tmp_path, monkeypatch):
+    monkeypatch.setattr(convert, "_WINDOWS", True)  # Windows lookup rules, checked on every platform
+    monkeypatch.setenv("PATH", str(tmp_path / "bin"))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "AppData"))
+    tool = tmp_path / "LibreDWG" / "dwg2dxf.exe"
+    tool.parent.mkdir()
+    tool.write_bytes(b"")
+    monkeypatch.setenv("NFE_DWG2DXF", f'"{tool.with_suffix("")}"')  # quoted and without .exe, as cmd's `set` leaves it
+    assert find_tool("dwg2dxf") == str(tool)
+    monkeypatch.setenv("NFE_DWG2DXF", str(tmp_path / "missing.exe"))
+    with pytest.raises(ConversionError, match="NFE_DWG2DXF is set"):
+        find_tool("dwg2dxf")
+    monkeypatch.delenv("NFE_DWG2DXF")
+    with pytest.raises(ConversionError, match="win64.zip"):  # the install hint
+        find_tool("dwg2dxf")
+    unzipped = tmp_path / "AppData" / "Programs" / "LibreDWG" / "dwg2dxf.exe"  # where the README unzips it
+    unzipped.parent.mkdir(parents=True)
+    unzipped.write_bytes(b"")
+    assert find_tool("dwg2dxf") == str(unzipped)
+    on_path = tmp_path / "bin" / "dwg2dxf.exe"
+    on_path.parent.mkdir()
+    on_path.write_bytes(b"")
+    on_path.chmod(0o755)
+    assert find_tool("dwg2dxf") == str(on_path)  # PATH comes first
+
+
+def test_dwg_through_libredwg(tmp_path):
+    try:
+        dxf2dwg = find_tool("dxf2dwg")
+        find_tool("dwg2dxf")
+    except ConversionError as exc:
+        if os.environ.get("NFE_REQUIRE_LIBREDWG"):
+            raise
+        pytest.skip(str(exc))
+    dwg = tmp_path / "synthetic.dwg"
+    subprocess.run([dxf2dwg, "-y", "-o", str(dwg), str(_drawing(tmp_path / "synthetic.dxf"))], cwd=tmp_path,
+                   capture_output=True, timeout=300, check=True)
+    floor = Floor.open(dwg, tmp_path / "work", floor_id="T2")  # read back through dwg2dxf
+    assert floor.conversion is not None and not floor.conversion.cached
+    sym = [s for s in floor.symbols if s.block == "SOCKET"]
+    assert len(sym) == 1 and math.dist(sym[0].centre, (2.0, 0.265)) < 0.01
+    assert floor.units.detected == "m" and [r.name for r in floor.rooms.rooms] == ["Bedroom"]
+    ov = Overlay.open(floor, "t_dwg", fresh=True)
+    place_device(floor, ov, "Bedroom", "socket_twin_13a", "perimeter:3")
+    lib = ov.validate(libredwg=True)["libredwg"]  # dxf2dwg -> dwgread -> dwg2dxf on the overlay
+    assert lib["ran"] and lib["inserts_match"] and lib["attribs_match"]

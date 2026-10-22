@@ -1,0 +1,78 @@
+# pyflakes and pytest on Windows, macOS and Linux. The tests build their own synthetic drawing, so no
+# client data is needed, and the F6 integration test skips itself.
+#
+# The windows-libredwg job also installs LibreDWG's Windows release build the way the README describes
+# and reads a DWG made from the synthetic drawing: DXF -> dxf2dwg -> DWG -> dwg2dxf -> Floor.open.
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: ${{ matrix.os }}, Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+        python: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install
+        run: python -I -m pip install -e ".[test]" pyflakes
+      - name: pyflakes
+        run: python -I -m pyflakes src tests scripts
+      - name: pytest
+        run: python -I -m pytest -q -rs
+
+  windows-libredwg:
+    name: windows-latest, Python 3.13, LibreDWG 0.14
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      LIBREDWG_VERSION: "0.14"
+      LIBREDWG_SHA256: 1ad7e15344d20b3426c3435b078d82fb84b35062815946b2cca9c5fc9810fea8
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install LibreDWG (release zip, unzipped where the README says)
+        shell: pwsh
+        run: |
+          $zip = Join-Path $env:RUNNER_TEMP "libredwg-$env:LIBREDWG_VERSION-win64.zip"
+          Invoke-WebRequest "https://github.com/LibreDWG/libredwg/releases/download/$env:LIBREDWG_VERSION/libredwg-$env:LIBREDWG_VERSION-win64.zip" -OutFile $zip
+          $hash = (Get-FileHash $zip -Algorithm SHA256).Hash
+          if ($hash -ne $env:LIBREDWG_SHA256) { throw "unexpected SHA-256 $hash for $zip" }
+          $dest = Join-Path $env:LOCALAPPDATA "Programs\LibreDWG"
+          Expand-Archive $zip -DestinationPath $dest
+          & (Join-Path $dest "dwg2dxf.exe") --version
+      - name: Install
+        run: python -I -m pip install -e ".[test]"
+      - name: pytest (the LibreDWG test must run, not skip)
+        env:
+          NFE_REQUIRE_LIBREDWG: "1"
+        run: python -I -m pytest -q -rs
