@@ -166,8 +166,8 @@ fl apply-rules --rules "$RULES" --overlay small_power --units W --dry-run
 ```
 
 Select with `--units W E` (mirrored apartments) or `--rooms R01 R02` (ids from `rooms.json`).
-`"devices": 0` with no warning usually means the selection matched nothing. A rule set's
-`applies_to: {units: [W, E]}` finds nothing on a floor without those units, so pass `--rooms`.
+`"devices": 0` means the selection matched nothing. A rule set's `applies_to: {units: [W, E]}`
+finds nothing on a floor without those units (the toolkit warns about this), so pass `--rooms`.
 For a one-off, write a small rules file in `$NFE_WORK/rules/` in the same format.
 
 b. **Render the proposal.** A dry run leaves nothing to draw, so put the same proposal into a
