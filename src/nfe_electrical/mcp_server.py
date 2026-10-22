@@ -179,9 +179,9 @@ def get_room(floor_id: str, room: str) -> dict:
 
 @server.tool(structured_output=False)
 def run_checks(floor_id: str, which: str = "all") -> dict:
-    """Read-only checks: title blocks and drawing numbers, legends vs symbols used, device counts per
-    room. which: all | title_blocks | legends | device_counts. Writes checks.json, checks.md and
-    device_counts.csv in the floor's work folder."""
+    """Read-only checks: title blocks and drawing numbers, sheets (empty, stale viewports, entities off
+    the paper), legends vs symbols used, device counts per room. which: all | title_blocks | sheets |
+    legends | device_counts. Writes checks.json, checks.md and device_counts.csv in the floor's work folder."""
     f = _floor(floor_id)
     out = f.out_dir
     if which == "all":
@@ -189,13 +189,13 @@ def run_checks(floor_id: str, which: str = "all") -> dict:
         (out / "checks.json").write_text(json.dumps(_jsonable(res), indent=1, default=str), encoding="utf-8")
         (out / "checks.md").write_text(checks_mod.checks_markdown(res), encoding="utf-8")
         checks_mod.write_device_counts_csv(res["device_counts"], out / "device_counts.csv")
-        issues = res["title_blocks"]["issues"] + res["legends"]["issues"] + res["device_counts"]["issues"]
+        issues = [i for part in ("title_blocks", "sheets", "legends", "device_counts") for i in res[part]["issues"]]
         return _jsonable({"summary": res["summary"], "issues": issues,
                           "files": [str(out / n) for n in ("checks.json", "checks.md", "device_counts.csv")]})
-    fn = {"title_blocks": checks_mod.check_title_blocks, "legends": checks_mod.check_legends,
-          "device_counts": checks_mod.device_counts}.get(which)
+    fn = {"title_blocks": checks_mod.check_title_blocks, "sheets": checks_mod.check_sheets,
+          "legends": checks_mod.check_legends, "device_counts": checks_mod.device_counts}.get(which)
     if fn is None:
-        raise ValueError("which must be all, title_blocks, legends or device_counts")
+        raise ValueError("which must be all, title_blocks, sheets, legends or device_counts")
     return _jsonable(fn(f))
 
 

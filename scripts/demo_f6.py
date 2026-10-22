@@ -4,7 +4,8 @@ Reads the architect's DWG, finds rooms, runs the read-only checks, regenerates t
 small-power sockets of the repeated apartment type from a BS 7671 rule set, draws a
 demo circuit, mirrors a reviewed unit onto its twin, validates the overlay DXFs,
 renders review images and plots the small power sheet to PDF with the overlay.
-Every step is timed.
+Every step is timed. On a floor without mirrored units the circuit demo and the mirror
+step are skipped, and the rules' own scope decides which rooms get anything.
 
     .venv/bin/python -I scripts/demo_f6.py \
         --drawing "work/input/F6/<pilot floor>.dwg" --workdir work
@@ -83,7 +84,8 @@ def main() -> None:
         rep = apply_rules(f, ov, rules, units=units)
 
     with t("5 demo circuit run (unit W lounge sockets from the W consumer unit)"):
-        lounge = f.rooms.get(f"Lounge [{units[0]}]") if units else None
+        lounges = [r for r in f.rooms.rooms if units and r.unit == units[0] and r.room_type == "lounge"]
+        lounge = lounges[0] if lounges else None
         cct = None
         if lounge is not None:
             devs = [d["handle"] for d in ov.devices() if d.get("room") == lounge.room_id and d["type"] == "socket_twin_13a"]
@@ -94,15 +96,19 @@ def main() -> None:
                                   db=cu.attribs.get("CU") or "CU")
 
     with t("6 compare with the engineer's layout"):
-        ids = [r.room_id for r in f.rooms.rooms if r.unit in units]
+        ids = [r.room_id for r in f.rooms.rooms if (r.unit in units if units else not r.service)]
         cmp = compare_devices(f, ov, ids, SOCKET_TYPES)
         mir = mirror_consistency(f)
 
     with t("7 copy reviewed unit W onto unit E (mirror)"):
         ovm = Overlay.open(f, f"{f.floor_id}_typeA_W_mirrored", fresh=True)
-        apply_rules(f, ovm, rules, units=[units[0]])
-        mres = mirror_unit(f, ovm, units[0], units[1])
-        cmp_m = compare_devices(f, ovm, [r.room_id for r in f.rooms.rooms if r.unit == units[1]], SOCKET_TYPES)
+        mres, cmp_m = {"skipped": []}, None
+        if len(units) == 2:
+            apply_rules(f, ovm, rules, units=[units[0]])
+            mres = mirror_unit(f, ovm, units[0], units[1])
+            cmp_m = compare_devices(f, ovm, [r.room_id for r in f.rooms.rooms if r.unit == units[1]], SOCKET_TYPES)
+        else:
+            print("   skipped: no mirrored units on this floor", flush=True)
 
     with t("8 validate overlays (ezdxf strict re-read + LibreDWG round trip)"):
         val = {"main": ov.validate(libredwg=True), "mirrored": ovm.validate(libredwg=True)}
@@ -119,13 +125,16 @@ def main() -> None:
                                             window=render.room_window(f, ids_u), overlay=ov, pairs=pairs,
                                             title=f"{f.floor_id} unit {u}: rules (magenta) vs engineer (blue); "
                                                   "lines pair them up"))
-        ids_e = [r.room_id for r in f.rooms.rooms if r.unit == units[1]]
-        files.append(render.render_crop(f, renders / f"{f.floor_id}_unit_{units[1]}_mirrored_compare.png",
-                                        window=render.room_window(f, ids_e), overlay=ovm,
-                                        pairs=[p for r in cmp_m["rooms"] for p in r["pairs"]],
-                                        title=f"{f.floor_id} unit {units[1]}: unit {units[0]} mirrored (magenta) vs engineer (blue)"))
+        if cmp_m:
+            ids_e = [r.room_id for r in f.rooms.rooms if r.unit == units[1]]
+            files.append(render.render_crop(f, renders / f"{f.floor_id}_unit_{units[1]}_mirrored_compare.png",
+                                            window=render.room_window(f, ids_e), overlay=ovm,
+                                            pairs=[p for r in cmp_m["rooms"] for p in r["pairs"]],
+                                            title=f"{f.floor_id} unit {units[1]}: unit {units[0]} mirrored (magenta) "
+                                                  "vs engineer (blue)"))
         crops = []
-        for name in (f"Bedroom [{units[0]}]", f"Lounge [{units[0]}]", f"Kitchen [{units[0]}]", f"Cinema [{units[0]}]"):
+        for name in ((f"Bedroom [{units[0]}]", f"Lounge [{units[0]}]", f"Kitchen [{units[0]}]", f"Cinema [{units[0]}]")
+                     if units else ()):
             try:
                 r = f.rooms.get(name)
             except KeyError:
@@ -152,8 +161,11 @@ def main() -> None:
     md = [f"# {f.floor_id} demo results", "",
           f"Governing standard: {f.standard}. Rule set: `{Path(args.rules).name}` ({rules.name}, "
           f"{rules.version}).", "",
-          comparison_markdown(cmp, mir, "Rules applied to both units independently"),
-          comparison_markdown(cmp_m, None, f"Unit {units[0]} generated from rules, then mirrored onto unit {units[1]}")]
+          comparison_markdown(cmp, mir, "Rules applied to both units independently" if units
+                              else "Rules applied to the floor (no mirrored units found)")]
+    if cmp_m:
+        md.append(comparison_markdown(cmp_m, None, f"Unit {units[0]} generated from rules, then mirrored onto unit "
+                                                   f"{units[1]}"))
     (out / "comparison.md").write_text("\n".join(md), encoding="utf-8")
     timings = {"steps_s": t.steps, "total_s": total, "floor_internal": f.timings}
     (out / "timings.json").write_text(json.dumps(timings, indent=1), encoding="utf-8")
@@ -161,7 +173,7 @@ def main() -> None:
         "floor": f.floor_id, "reports": reports, "overlay": str(ov.path), "overlay_mirrored": str(ovm.path),
         "rooms": rs.summary(), "check_issues": res["summary"], "devices_placed": rep["devices_placed"],
         "rule_warnings": rep["warnings"], "circuit": {k: cct[k] for k in ("circuit", "length_m", "wall_crossings")}
-        if cct else None, "comparison": cmp["totals"], "mirror_comparison": cmp_m["totals"],
+        if cct else None, "comparison": cmp["totals"], "mirror_comparison": cmp_m["totals"] if cmp_m else None,
         "mirror_skipped": len(mres["skipped"]), "validation": {
             k: {"ezdxf_audit_errors": v["ezdxf"]["audit_errors"], "counts_match": v["ezdxf"]["counts_match"],
                 "only_nfe_layers": v["only_nfe_layers"],

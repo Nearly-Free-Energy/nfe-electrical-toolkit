@@ -6,9 +6,9 @@ Phase 1 was built and demonstrated on one floor of a real NFE project (the pilot
 
 | Step | Module | What it does |
 |---|---|---|
-| Read and normalise | `convert.py`, `floor.py`, `sheets.py`, `units.py`, `basepick.py`, `symbols.py` | Converts DWG with LibreDWG `dwg2dxf`; loads with ezdxf; rebuilds sheet views from viewport geometry (LibreDWG zeroes the on/off flags); detects the real units from geometry; picks the plotted base among PDF-import copies; indexes every electrical symbol by block name and **drawn** centre |
-| Rooms | `rooms.py`, `apartments.py` | Fills outward from room labels to the walls; treats dashed beam lines as zone boundaries; reports failed labels; finds mirrored apartment units |
-| Read-only checks | `checks.py` | Title blocks and drawing numbers, legends against the symbols used on each sheet, device counts per room |
+| Read and normalise | `convert.py`, `floor.py`, `sheets.py`, `units.py`, `basepick.py`, `symbols.py` | Converts DWG with LibreDWG `dwg2dxf`; loads with ezdxf; rebuilds sheet views from viewport geometry (LibreDWG zeroes the on/off flags) and takes as the plan the largest viewport that shows the drawing; detects the real units from geometry, but never overrules the declared unit on fewer than three signals; picks the plotted base among PDF-import copies; indexes every electrical symbol by block name and **drawn** centre |
+| Rooms | `rooms.py`, `apartments.py` | Fills outward from room labels to the walls; treats dashed beam lines as zone boundaries; reports failed labels; finds mirrored apartment units (at least three mirrored pairs of rooms that are not ducts, lifts or stairs) |
+| Read-only checks | `checks.py` | Title blocks and drawing numbers; sheets (empty, stale copies of the plan viewport, entities off the paper); legends against the symbols used on each sheet; device counts per room |
 | Placement | `placement.py`, `fixtures.py`, `overlay.py` | `place_device(room, type, rule)`, a circuit-run tool and a mirror-unit tool; write only to the overlay, correct base-point offsets, learn wall offsets and orientation from the engineer's existing symbols |
 | Rules | `rules.py`, `rules/<standard>/*.yaml` | Applies a YAML rule set written for the job's governing standard (BS 7671 by default) |
 | Compare | `compare.py` | Counts and positions against the engineer's layout |
@@ -190,7 +190,7 @@ Tools:
 | `open_floor` | work folder only | Import, convert and normalise a drawing; returns a `floor_id` |
 | `floor_report`, `list_symbols`, `list_device_types` | no | Units, sheets, base copies, block offsets, symbols, placeable device types |
 | `find_rooms`, `get_room` | `rooms.json`, `rooms.png` | Rooms, areas, mirrored units, walls and what they back onto, recognised furniture |
-| `run_checks` | check reports | Title blocks, legends, device counts |
+| `run_checks` | check reports | Title blocks, sheets, legends, device counts |
 | `place_device` | overlay (if `dry_run=false`) | One device type in one room by rule, e.g. `pair:bed_head`, `wall:media_wall:3`, `perimeter:2` |
 | `apply_rules` | overlay (if `dry_run=false`) | A YAML rules file over units or rooms |
 | `mirror_unit_layout` | overlay (if `dry_run=false`) | Copy a reviewed unit onto its mirror image |
