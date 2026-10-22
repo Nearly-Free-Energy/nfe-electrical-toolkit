@@ -13,7 +13,7 @@ from .compare import SOCKET_TYPES, compare_devices, comparison_markdown, mirror_
 from .floor import Floor
 from .overlay import Overlay
 from .placement import mirror_unit
-from .rules import apply_rules, load_rules
+from .rules import apply_rules, load_rules, preview_rules
 
 
 def _open(args) -> Floor:
@@ -51,13 +51,22 @@ def cmd_check(args) -> dict:
     return {"summary": res["summary"], "files": [str(f.out_dir / "checks.json"), str(f.out_dir / "checks.md")]}
 
 
+def _placements(rep: dict) -> list[dict]:
+    """Per room, what each rule placed: [x, y, rotation] of every device's drawn centre."""
+    return [{"room": r["room"], "name": r["name"], "unit": r["unit"],
+             "devices": [{"type": p["type"], "rule": p["rule"], "requested": p["requested"], "placed": p["placed"],
+                          "at": [[round(i["target"][0], 3), round(i["target"][1], 3), round(i["rotation"], 1)]
+                                 for i in p["items"]]} for p in r["placed"]]}
+            for r in rep["rooms"]]
+
+
 def cmd_apply_rules(args) -> dict:
     f = _open(args)
     ov = Overlay.open(f, args.overlay, fresh=args.fresh)
     rep = apply_rules(f, ov, load_rules(args.rules, f.catalogue), units=args.units, rooms=args.rooms,
                       dry_run=args.dry_run)
-    return {"devices": rep["devices_placed"], "warnings": rep["warnings"], "overlay": str(ov.path),
-            "dry_run": args.dry_run}
+    return {"devices": rep["devices_placed"], "warnings": rep["warnings"], "rooms": _placements(rep),
+            "overlay": str(ov.path), "dry_run": args.dry_run}
 
 
 def cmd_mirror(args) -> dict:
@@ -80,13 +89,24 @@ def cmd_render(args) -> dict:
     f = _open(args)
     ov = Overlay.open(f, args.overlay) if args.overlay else None
     ids = None
-    if args.room:
-        ids = [f.rooms.get(args.room).room_id]
+    if args.rooms or args.room:
+        ids = [f.rooms.get(r).room_id for r in (args.rooms or [args.room])]
     elif args.unit:
         ids = [r.room_id for r in f.rooms.rooms if r.unit == args.unit]
+    preview = None
+    if args.rules:  # draw what the rules would add, on a copy of the overlay that is never saved
+        base = ov or Overlay.open(f, "preview", fresh=True)
+        ov, rep = preview_rules(f, base, load_rules(args.rules, f.catalogue), rooms=ids if not args.unit else None,
+                                units=[args.unit] if args.unit else None)
+        preview = {"rules": rep["rules"], "devices": rep["devices_placed"], "warnings": rep["warnings"],
+                   "rooms": _placements(rep)}
     window = render_mod.room_window(f, ids) if ids else f.plan_window
-    out = args.out or str(f.workspace.floor_dir(f.floor_id, "renders") / f"render_{args.room or args.unit or 'plan'}.png")
-    return {"file": render_mod.render_crop(f, out, window=window, overlay=ov, room_ids=ids)}
+    where = "_".join(args.rooms) if args.rooms else args.room or args.unit or "plan"
+    out = args.out or str(f.workspace.floor_dir(f.floor_id, "renders") / f"{'preview' if preview else 'render'}_{where}.png")
+    res = {"file": render_mod.render_crop(f, out, window=window, overlay=ov, room_ids=ids)}
+    if preview:
+        res["preview"] = preview
+    return res
 
 
 def cmd_plot_sheet(args) -> dict:
@@ -142,7 +162,10 @@ def main(argv: list[str] | None = None) -> int:
     p = floor_cmd("render", cmd_render, "PNG/PDF of the overlay over the base")
     p.add_argument("--overlay")
     p.add_argument("--room")
+    p.add_argument("--rooms", nargs="+", help="several rooms (ids or names)")
     p.add_argument("--unit")
+    p.add_argument("--rules", help="preview a YAML rules file on the room(s), unit or (by default) the rule set's own "
+                                   "scope, over --overlay if given; nothing is written")
     p.add_argument("--out", help="output .png or .pdf")
     p = floor_cmd("plot-sheet", cmd_plot_sheet, "plot a paper-space sheet at true size with the overlay (PDF)")
     p.add_argument("--layout", help="layout (sheet) name; default: the sheet matching the overlay's content")

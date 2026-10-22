@@ -115,34 +115,33 @@ def draw_crop(ax, floor, window, overlay=None, existing_categories=("power", "bo
     pad = 0.05 * max(window[2] - window[0], window[3] - window[1])
     win = (window[0] - pad, window[1] - pad, window[2] + pad, window[3] + pad)
 
-    def keep(e) -> bool:
+    def keep_base(e) -> bool:
         layer = e.dxf.get("layer", "0")
-        s = sym.get(e.dxf.handle)
-        if s is not None:
-            if s.category not in existing_categories:
-                return False
-            if highlight_types and s.device_type not in highlight_types:
-                return False
-            return _hits(s.bbox, win)
-        if layer.lower() in elec_layers or layer not in floor.layers_on:
+        if e.dxf.handle in sym or layer.lower() in elec_layers or layer not in floor.layers_on:
             return False
         if e.dxftype() == "INSERT" and layer == "0" and floor.catalogue.classify(e.dxf.name).known:
             return False
         return _hits(boxes.get(e.dxf.handle), win)
 
-    def base_colour(entity, props):
-        props.color = EXISTING if entity.dxf.handle in sym else BASE
+    def keep_existing(e) -> bool:
+        s = sym.get(e.dxf.handle)
+        return (s is not None and s.category in existing_categories
+                and not (highlight_types and s.device_type not in highlight_types) and _hits(s.bbox, win))
 
-    fe = Frontend(RenderContext(floor.doc), MatplotlibBackend(ax), config=_config())
-    fe.push_property_override_function(base_colour)
-    fe.draw_layout(floor.msp, finalize=False, filter_func=keep)
+    def draw(doc, layout, colour, filter_func=None) -> None:
+        # One colour for everything drawn, the parts of block references included: the override sees each
+        # block's own entities, so a test on the INSERT's handle alone would leave the symbols grey.
+        def override(entity, props):
+            props.color = colour
+        fe = Frontend(RenderContext(doc), MatplotlibBackend(ax), config=_config())
+        fe.push_property_override_function(override)
+        fe.draw_layout(layout, finalize=False, filter_func=filter_func)
 
+    draw(floor.doc, floor.msp, BASE, keep_base)
+    if existing_categories:
+        draw(floor.doc, floor.msp, EXISTING, keep_existing)
     if overlay is not None:
-        def ov_colour(entity, props):
-            props.color = OVERLAY
-        fo = Frontend(RenderContext(overlay.doc), MatplotlibBackend(ax), config=_config())
-        fo.push_property_override_function(ov_colour)
-        fo.draw_layout(overlay.msp, finalize=False)
+        draw(overlay.doc, overlay.msp, OVERLAY)
 
     if rooms:
         for r in floor.rooms.rooms:

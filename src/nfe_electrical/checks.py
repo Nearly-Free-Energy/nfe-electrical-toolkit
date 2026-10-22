@@ -83,6 +83,7 @@ _FIELD_RX = [(k, re.compile(rx, re.I)) for k, rx in FIELDS]
 _REV_HEAD = {"no": re.compile(r"^No\.?$", re.I), "date": re.compile(r"^Date$", re.I), "description": re.compile(r"^Desc", re.I)}
 _GRID_REF = re.compile(r"^(\d{1,2}|[A-Z])$")
 _PLACEHOLDER = re.compile(r"^[\s.,\-_]*$")
+_SCALE_RATIO = re.compile(r"(?<!\d)1\s*[:/]\s*(\d+(?:[.,]\d+)?)")  # 1:50, 1 : 50, 1/50 (also inside "1:50 @ A1")
 CONSTANT_FIELDS = ["job_number", "client", "project", "drawn_by", "designed_by", "paper_size", "project_engineer"]
 DISCIPLINE_WORDS = {"lighting": r"LIGHTING", "small_power": r"SMALL\s*POWER|POWER", "ict_fire": r"FIRE|ICT|SECURITY|CCTV"}
 DISCIPLINE_NAMES = {"lighting": "lighting", "small_power": "small power", "ict_fire": "ICT & fire"}
@@ -246,6 +247,11 @@ def check_title_blocks(floor) -> dict:
                 issues.append(Issue("warning", "empty_field", f"{key.replace('_', ' ')} is empty or a placeholder", lay))
         if f.get("scale", "").upper() in ("NST", "NTS") and s.get("measured_scale"):
             issues.append(Issue("info", "scale", f"scale says {f['scale']!r} but the plan viewport plots at "
+                                f"{s['measured_scale']}", lay))
+        stated = [float(m.replace(",", ".")) for m in _SCALE_RATIO.findall(f.get("scale", ""))]
+        measured = _SCALE_RATIO.findall(s.get("measured_scale") or "")
+        if stated and measured and all(abs(x / float(measured[0]) - 1) > 0.05 for x in stated):
+            issues.append(Issue("warning", "scale", f"scale says {f['scale']!r} but the plan viewport plots at "
                                 f"{s['measured_scale']}", lay))
         sheet_date = parse_date(f.get("date", ""))
         rev_dates = [(r.get("no", "?"), parse_date(r.get("date", ""))) for r in s["revisions"]]

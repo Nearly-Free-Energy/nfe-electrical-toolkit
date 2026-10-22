@@ -121,6 +121,9 @@ def scope_warnings(floor, rules: RuleSet, units: list[str] | None = None, rooms:
 
 def apply_rules(floor, overlay, rules: RuleSet, units: list[str] | None = None, rooms: list[str] | None = None,
                 dry_run: bool = False) -> dict:
+    """Apply a rule set to the floor's rooms. Every rule runs on an in-memory copy of the overlay, so a
+    dry run reports exactly what a write would place (each rule sees what the earlier ones proposed), and
+    a write is all or nothing: the overlay changes, and is saved once, only if every rule succeeded."""
     job_standard = normalise_standard(getattr(floor, "standard", None))
     if rules.standard != job_standard:
         raise ValueError(f"rule set {rules.name!r} is written for {rules.standard}, but job {floor.floor_id} is "
@@ -128,6 +131,7 @@ def apply_rules(floor, overlay, rules: RuleSet, units: list[str] | None = None, 
     t0 = time.perf_counter()
     report = {"rules": rules.name, "standard": rules.standard, "version": rules.version, "dry_run": dry_run,
               "rooms": [], "warnings": scope_warnings(floor, rules, units, rooms)}
+    work = overlay.copy()
     for room in target_rooms(floor, rules, units, rooms):
         room_rules = rules.rooms.get(room.room_type)
         if room_rules is None:
@@ -140,13 +144,23 @@ def apply_rules(floor, overlay, rules: RuleSet, units: list[str] | None = None, 
             spec["count"] = resolve_count(rule.get("count", 1), room.area_m2)
             if spec["count"] <= 0:
                 continue
-            res = place_device(floor, overlay, room.room_id, rule["type"], spec, dry_run=dry_run)
+            res = place_device(floor, work, room.room_id, rule["type"], spec)
+            items = [{k: v for k, v in i.items() if k != "handle"} for i in res["placed"]] if dry_run else res["placed"]
             entry["placed"].append({"type": rule["type"], "why": rule.get("why", ""), "rule": res["rule"],
-                                    "requested": res["requested"], "placed": len(res["placed"]),
-                                    "items": res["placed"]})
+                                    "requested": res["requested"], "placed": len(items), "items": items})
             if res.get("warning"):
                 report["warnings"].append(res["warning"])
         report["rooms"].append(entry)
     report["devices_placed"] = sum(p["placed"] for r in report["rooms"] for p in r["placed"])
+    if not dry_run and report["devices_placed"]:
+        overlay.adopt(work)
     report["seconds"] = round(time.perf_counter() - t0, 2)
     return report
+
+
+def preview_rules(floor, overlay, rules: RuleSet, units: list[str] | None = None,
+                  rooms: list[str] | None = None) -> tuple:
+    """Apply a rule set to an in-memory copy of `overlay` that is never saved, so it can be rendered and
+    shown before anything is written. Returns the copy and the apply_rules report."""
+    preview = overlay.copy()
+    return preview, apply_rules(floor, preview, rules, units=units, rooms=rooms)
