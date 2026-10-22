@@ -358,7 +358,7 @@ def _pick_walls(floor, room, walls: RoomWalls, lines: list[WallLine], how: str):
     longest = max(lines, key=lambda ln: ln.length)
     to_m = floor.to_m
     if how == "bed_head":
-        from .fixtures import find_bed
+        from .fixtures import SIDE_NORMALS, find_bed
         bed = find_bed(floor, room)
         if bed is None:
             return [], None, "no bed found in the furniture layers"
@@ -367,9 +367,18 @@ def _pick_walls(floor, room, walls: RoomWalls, lines: list[WallLine], how: str):
         def gap(ln):  # distance from the bed's outline to the wall
             return min(math.hypot(max(bx0 - smp.x, 0, smp.x - bx1), max(by0 - smp.y, 0, smp.y - by1))
                        for smp in ln.samples)
+        size = f"bed {bed.size_m[0]:.1f} x {bed.size_m[1]:.1f} m incl. bedside units"
         cands = [ln for ln in lines if ln.length * to_m >= 0.6] or lines
-        return [min(cands, key=gap)], bed.centre, \
-            f"the bed head wall (bed {bed.size_m[0]:.1f} x {bed.size_m[1]:.1f} m incl. bedside units)"
+        head = bed.head_side()
+        if head is not None:  # the bedside tables show which side is the head
+            hx, hy = SIDE_NORMALS[head]
+            behind = [ln for ln in cands if ln.nx * hx + ln.ny * hy > 0.9 and gap(ln) * to_m <= 0.5]
+            if behind:
+                return [min(behind, key=gap)], bed.centre, f"the bed head wall ({size})"
+            # no wall right behind the head (a headboard, or only a dashed beam line): mount at the bed head itself
+            return [_bed_head_line(floor, bed, head)], bed.axis_point(head), \
+                f"the bed head ({size}; no wall right behind it)"
+        return [min(cands, key=gap)], bed.centre, f"the bed head wall ({size})"
     if how == "media_wall":
         from .fixtures import furniture_shapes
         units = [u for u in furniture_shapes(floor, room) if 0.25 <= min(u.size_m) <= 0.7 and max(u.size_m) >= 1.2
@@ -408,6 +417,27 @@ def _pick_walls(floor, room, walls: RoomWalls, lines: list[WallLine], how: str):
         ln = max(lines, key=lambda ln: ln.nx * want[0] + ln.ny * want[1] + 1e-3 * ln.length)
         return [ln], None, f"the {how} wall"
     return [longest], None, "the longest wall"
+
+
+def _bed_head_line(floor, bed, head: str) -> WallLine:
+    """A stand-in wall along a bed's head edge, for sockets mounted at the bed head itself."""
+    from .fixtures import SIDE_NORMALS
+    nx, ny = SIDE_NORMALS[head]
+    bx0, by0, bx1, by1 = bed.bbox
+    lo, hi = bed.edge_span.get(head, (bx0, bx1) if head in ("north", "south") else (by0, by1))
+    step = 0.05 / floor.to_m
+    n = max(2, int((hi - lo) / step) + 1)
+    samples = []
+    for i in range(n):
+        u = lo + (hi - lo) * i / (n - 1)
+        if head in ("north", "south"):
+            x, y = u, (by1 if head == "north" else by0)
+        else:
+            x, y = (bx1 if head == "east" else bx0), u
+        samples.append(WallSample(x, y, nx, ny, u - lo, -1, True, 0.0, "bed"))
+    line = WallLine(samples, nx, ny, step)
+    line.samples.sort(key=lambda smp: line.t(smp.x, smp.y))
+    return line
 
 
 def _spread(points, count: int, min_spacing: float, key=None):
