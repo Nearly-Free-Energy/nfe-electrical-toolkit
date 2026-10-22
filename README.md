@@ -226,7 +226,7 @@ rooms:
     - {type: socket_twin_13a, count: 3, place: wall, wall: [media_wall, facing_lounge, longest]}
 ```
 
-The strategies are `perimeter`, `wall`, `pair`, `corners`, `beside_door`, `centre` and `at`. The wall choices are `longest`, `shortest`, `long_sides`, `bed_head`, `media_wall`, `facing_<room type>`, `opposite_door` and the four compass directions. `count` can be a number or `{per_m2: 8, min: 2, max: 6}`. Device types and their source blocks are in `src/nfe_electrical/data/catalogue.yaml`; room vocabulary is in `room_types.yaml`. Engineers own all three files.
+The strategies are `perimeter`, `wall`, `pair`, `corners`, `beside_door`, `centre` and `at`. The wall choices are `longest`, `shortest`, `long_sides`, `bed_head`, `media_wall`, `facing_<room type>`, `opposite_door` and the four compass directions. `bed_head` is the wall right behind the bed's head, the side its bedside tables are on; when no wall stands there (a headboard, with perhaps only a dashed beam line behind it), the devices go at the bed head itself. `count` can be a number or `{per_m2: 8, min: 2, max: 6}`. Device types and their source blocks are in `src/nfe_electrical/data/catalogue.yaml`; room vocabulary is in `room_types.yaml`. Engineers own all three files.
 
 ## Safety and data
 
