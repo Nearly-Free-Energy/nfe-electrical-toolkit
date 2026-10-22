@@ -133,10 +133,10 @@ Other commands all take the same drawing, `--workdir`, `--floor-id` and `--stand
 |---|---|
 | `rooms` | Room finder only |
 | `check` | Title block, legend and device-count checks |
-| `apply-rules --rules rules/bs7671/apartment_type_a_small_power.yaml --overlay NAME [--units W E] [--fresh] [--dry-run]` | Place devices from a rule set |
+| `apply-rules --rules rules/bs7671/apartment_type_a_small_power.yaml --overlay NAME [--units W E \| --rooms R07 R08] [--fresh] [--dry-run]` | Place devices from a rule set, listing every device's position per room. `--dry-run` writes nothing and gives exactly the positions a write would. A write is all or nothing: if a rule fails, the overlay is left as it was |
 | `mirror --overlay NAME --from W --to E` | Copy one apartment's overlay devices onto its mirror image |
 | `compare --overlay NAME [--units W]` | Compare overlay sockets with the engineer's |
-| `render --overlay NAME [--unit W \| --room R07] [--out file.png\|.pdf]` | Review image |
+| `render --overlay NAME [--unit W \| --room R07 \| --rooms R07 R08] [--rules FILE] [--out file.png\|.pdf]` | Review image. With `--rules`, draws what the rule set would add to the overlay (on the unit, the rooms, or by default the rule set's own scope) and writes nothing: a proposal to show before writing |
 | `plot-sheet --overlay NAME [--layout "SMALLPOWER LAYOUT"] [--mode issue\|review]` | The sheet at true size (e.g. A1) as PDF. `issue` mode shows the overlay in place of the existing symbols it covers; `review` mode draws it in magenta on top |
 | `validate --overlay NAME [--no-libredwg]` | Re-read the overlay with ezdxf (and LibreDWG) |
 | `serve --workdir work` | Run the MCP server |
@@ -192,15 +192,15 @@ Tools:
 | `find_rooms`, `get_room` | `rooms.json`, `rooms.png` | Rooms, areas, mirrored units, walls and what they back onto, recognised furniture |
 | `run_checks` | check reports | Title blocks, sheets, legends, device counts |
 | `place_device` | overlay (if `dry_run=false`) | One device type in one room by rule, e.g. `pair:bed_head`, `wall:media_wall:3`, `perimeter:2` |
-| `apply_rules` | overlay (if `dry_run=false`) | A YAML rules file over units or rooms |
+| `apply_rules` | overlay (if `dry_run=false`) | A YAML rules file over units or rooms; all or nothing |
 | `mirror_unit_layout` | overlay (if `dry_run=false`) | Copy a reviewed unit onto its mirror image |
 | `add_circuit_run` | overlay (if `dry_run=false`) | Orthogonal run from a board through devices; tags the circuit on the devices |
 | `overlay_status`, `remove_overlay_items`, `validate_overlay` | overlay | Inspect, prune and check the overlay |
 | `compare_with_existing` | no | Counts and positions against the engineer's symbols |
-| `render_review` | a PNG/PDF | Returns the review image to Claude as well |
+| `render_review` | a PNG/PDF | Returns the review image to Claude as well. With `rules_path`, previews a rule set without writing it |
 | `plot_sheet` | a sheet PDF | A paper-space sheet at true size with the overlay (`issue` or `review` mode) |
 
-All writing tools default to `dry_run=true`: Claude proposes, the engineer looks at the render, and only then is the overlay written. Example request: *"Open work/input/F6/…dwg as F6, find the rooms, and propose bedside sockets for both bedrooms with pair:bed_head. Show me a render before writing anything."*
+All writing tools default to `dry_run=true`: Claude proposes, the engineer looks at the render (`render_review` with `rules_path` draws a rule set's proposal), and only then is the overlay written. Example request: *"Open work/input/F6/…dwg as F6, find the rooms, and propose bedside sockets for both bedrooms with pair:bed_head. Show me a render before writing anything."*
 
 ## The overlay DXF
 
@@ -240,7 +240,7 @@ The strategies are `perimeter`, `wall`, `pair`, `corners`, `beside_door`, `centr
 .venv/bin/python -I -m pytest -q
 ```
 
-`tests/test_synthetic.py` builds a small drawing on the fly: a walled room, a sheet with a viewport, and a socket block like NFE's existing ones, whose graphics sit 950 m from its base point. It checks units, rooms, wall-facing placement, base-point correction, dry runs, circuits, sheet plotting, the standard check and dashed-line detection. It also covers what differs on Windows: UTF-8 reports, an overlay held open by another program, read-only input copies, finding LibreDWG, and (when LibreDWG is installed) reading a DWG made from the synthetic drawing. `tests/test_f6_integration.py` runs on the real F6 drawing when it is present in `work/input/F6/`, or when `NFE_F6_DWG` points to it.
+`tests/test_synthetic.py` builds a small drawing on the fly: a walled room, a sheet with a viewport, and a socket block like NFE's existing ones, whose graphics sit 950 m from its base point. It checks units, rooms, wall-facing placement, base-point correction, dry runs (that they place exactly as a write would), all-or-nothing rule sets, rule-set previews from the CLI and MCP server, circuits, sheet plotting, the title block's stated scale against the plot, existing symbols in renders, the standard check and dashed-line detection. It also covers what differs on Windows: UTF-8 reports, an overlay held open by another program, read-only input copies, finding LibreDWG, and (when LibreDWG is installed) reading a DWG made from the synthetic drawing. `tests/test_f6_integration.py` runs on the real F6 drawing when it is present in `work/input/F6/`, or when `NFE_F6_DWG` points to it.
 
 CI ([`.github/workflows/tests.yml`](.github/workflows/tests.yml)) runs pyflakes and the tests on Windows, macOS and Linux with Python 3.11 and 3.13. A separate Windows job installs LibreDWG's release zip as described under [Windows](#windows) and sets `NFE_REQUIRE_LIBREDWG=1`, so the DWG test must run there rather than skip.
 

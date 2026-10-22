@@ -10,6 +10,7 @@ unless NFE_REQUIRE_LIBREDWG is set (as in CI's Windows LibreDWG job).
 from __future__ import annotations
 
 import csv
+import json
 import math
 import os
 import subprocess
@@ -182,6 +183,98 @@ def test_dashed_lines_are_recognised():
     found = dashed_chains(dashes + [solid] + short_pair, 1.0)
     assert {id(d) for d in dashes} <= found
     assert id(solid) not in found and not ({id(s) for s in short_pair} & found)
+
+
+# ---------------------------------------------------------------- dry runs, previews and checks
+def _rules(tmp_path, body: str):
+    path = tmp_path / "rules.yaml"
+    path.write_text("name: test\nstandard: BS 7671\n" + body)
+    return path
+
+
+def _targets(report: dict) -> list:
+    return [i["target"] for r in report["rooms"] for p in r["placed"] for i in p["items"]]
+
+
+def test_dry_run_places_exactly_as_a_write_would(floor, tmp_path):
+    # three twins fill the north wall, so a fourth socket has to go elsewhere; a dry run that ignored
+    # what the earlier rule proposed would put it on top of one of them
+    rules = load_rules(_rules(tmp_path, "defaults: {min_spacing: 0.8}\nrooms:\n  bedroom:\n"
+                              "    - {type: socket_twin_13a, count: 3, place: wall, wall: north}\n"
+                              "    - {type: socket_twin_usb, count: 1, place: wall, wall: [north, east]}\n"),
+                       floor.catalogue)
+    dry_ov = Overlay.open(floor, "t_dry_rules", fresh=True)
+    dry = apply_rules(floor, dry_ov, rules, dry_run=True)
+    real = apply_rules(floor, Overlay.open(floor, "t_real_rules", fresh=True), rules)
+    pts = _targets(dry)
+    assert len(pts) == 4 and pts == _targets(real)
+    assert min(math.dist(a, b) for k, a in enumerate(pts) for b in pts[k + 1:]) >= 0.8 - 1e-6
+    assert dry_ov.devices() == [] and not dry_ov.path.exists()
+    assert not any("handle" in i for r in dry["rooms"] for p in r["placed"] for i in p["items"])
+
+
+def test_a_rule_set_that_fails_part_way_writes_nothing(floor, tmp_path):
+    rules = load_rules(_rules(tmp_path, "rooms:\n  bedroom:\n"
+                              "    - {type: socket_twin_13a, count: 2, place: wall, wall: north}\n"
+                              "    - {type: socket_twin_high_level, count: 1, place: wall, wall: south}\n"),
+                       floor.catalogue)  # the drawing has no HIGHLEVEL block to copy
+    ov = Overlay.open(floor, "t_all_or_nothing", fresh=True)
+    with pytest.raises(KeyError, match="HIGHLEVEL"):
+        apply_rules(floor, ov, rules)
+    assert ov.devices() == [] and not ov.path.exists()  # the first rule's sockets are not kept either
+
+
+def test_cli_dry_run_lists_positions_and_render_previews_rules(floor, tmp_path, capsys):
+    rules = _rules(tmp_path, "rooms:\n  bedroom:\n    - {type: socket_twin_13a, count: 2, place: perimeter}\n")
+    work = tmp_path / "work"
+    common = [str(floor.source), "--workdir", str(work), "--floor-id", "P1"]
+    cli.main(["apply-rules", *common, "--rules", str(rules), "--overlay", "plan", "--dry-run"])
+    out = json.loads(capsys.readouterr().out)
+    assert out["devices"] == 2 and len(out["rooms"][0]["devices"][0]["at"]) == 2
+    png = tmp_path / "preview.png"
+    cli.main(["render", *common, "--overlay", "plan", "--rules", str(rules), "--out", str(png)])
+    res = json.loads(capsys.readouterr().out)
+    assert res["preview"]["devices"] == 2 and png.stat().st_size > 1000
+    assert not list((work / "P1" / "overlays").glob("*.dxf"))  # neither wrote an overlay
+
+
+def test_mcp_render_review_previews_a_rule_set(floor, tmp_path, monkeypatch):
+    rules = _rules(tmp_path, "rooms:\n  bedroom:\n    - {type: socket_twin_13a, count: 2, place: perimeter}\n")
+    monkeypatch.setitem(mcp_server.STATE["floors"], floor.floor_id, floor)
+    info = json.loads(mcp_server.render_review(floor.floor_id, overlay="t_mcp_preview", rules_path=str(rules),
+                                               fmt="pdf")[0])
+    assert info["preview"]["devices"] == 2 and Path(info["file"]).stat().st_size > 1000
+    assert not (floor.out_dir / "overlays" / "t_mcp_preview.dxf").exists()
+
+
+def test_title_block_scale_is_checked_against_the_plot(floor, tmp_path):
+    from nfe_electrical.checks import check_title_blocks
+    measured = floor.plan_sheet.scale_ratio(floor.to_m)
+    for stated, flagged in ((f"1:{measured / 2.5:.0f}", True), (f"1:{measured:.0f} @ A1", False), ("NTS", True)):
+        doc = ezdxf.readfile(str(_drawing(tmp_path / "tb.dxf")))
+        blk = doc.blocks.new("TB")
+        for text, y in (("DRAWING NO", 20), ("E-201", 15), ("SCALE", 10), (stated, 5)):
+            blk.add_text(text, height=2.5).set_placement((0, y))
+        doc.layouts.get("SMALLPOWER").add_blockref("TB", (300, 0))
+        doc.saveas(tmp_path / "tb.dxf")
+        f = Floor.open(tmp_path / "tb.dxf", tmp_path / f"work{len(stated)}{flagged}", floor_id="TB")
+        found = [i["message"] for i in check_title_blocks(f)["issues"] if i["check"] == "scale"]
+        assert bool(found) == flagged, (stated, found)
+
+
+def test_renders_show_existing_symbols_in_blue(floor, tmp_path):
+    import numpy as np
+    from PIL import Image
+    from nfe_electrical.render import EXISTING, render_crop, room_window
+    blue = np.array([int(EXISTING[k:k + 2], 16) for k in (1, 3, 5)])
+    window = room_window(floor, [floor.rooms.rooms[0].room_id])
+
+    def blue_pixels(path) -> int:  # the legend's blue patch is in both renders
+        px = np.asarray(Image.open(path).convert("RGB")).reshape(-1, 3).astype(int)
+        return int((np.abs(px - blue).sum(axis=1) < 150).sum())  # grey and white are 270+ away
+    shown = blue_pixels(render_crop(floor, tmp_path / "a.png", window=window, existing_categories=("power",)))
+    hidden = blue_pixels(render_crop(floor, tmp_path / "b.png", window=window, existing_categories=()))
+    assert shown > hidden + 100
 
 
 # ---------------------------------------------------------------- Windows and other platforms

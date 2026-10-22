@@ -11,6 +11,7 @@ research recommends); placement corrects for any base-point offset either way.
 from __future__ import annotations
 
 import datetime as _dt
+import io
 import math
 import re
 import subprocess
@@ -44,6 +45,7 @@ class Overlay:
         self.msp = doc.modelspace()
         self.recentre_blocks = recentre_blocks
         self.save_failed = False  # True when the last save could not replace the file (memory and file differ)
+        self.in_memory = False  # a copy() for trying placements: save() never writes it
         self._geom: dict[str, tuple[float, float]] = {}
 
     # ------------------------------------------------------------ files
@@ -87,7 +89,24 @@ class Overlay:
         if APPID not in self.doc.appids:
             self.doc.appids.add(APPID)
 
+    def copy(self) -> "Overlay":
+        """An independent in-memory copy, for trying placements: it is never saved, and this overlay and its
+        file are untouched. adopt() takes it over once everything placed on it has succeeded."""
+        buf = io.StringIO()
+        self.doc.write(buf)
+        ov = Overlay(self.floor, self.name, self.path, ezdxf.read(io.StringIO(buf.getvalue())), self.recentre_blocks)
+        ov.in_memory = True
+        ov._geom = dict(self._geom)
+        return ov
+
+    def adopt(self, other: "Overlay") -> str:
+        """Make an in-memory copy's content this overlay's own, and save it."""
+        self.doc, self.msp, self._geom = other.doc, other.doc.modelspace(), dict(other._geom)
+        return self.save()
+
     def save(self) -> str:
+        if self.in_memory:
+            return str(self.path)
         self._purge_foreign_layers()
         self.path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self.path.with_suffix(".tmp.dxf")
@@ -262,6 +281,8 @@ class Overlay:
     # ------------------------------------------------------------ checks
     def validate(self, libredwg: bool = True) -> dict:
         """Re-read the saved overlay strictly with ezdxf and (optionally) LibreDWG, and compare counts."""
+        if self.in_memory:
+            raise ValueError("an in-memory copy has no file to validate; validate the overlay it was copied from")
         self.save()
         nfe = set(self.floor.catalogue.nfe_layers)
         src = _counts(self.doc)
